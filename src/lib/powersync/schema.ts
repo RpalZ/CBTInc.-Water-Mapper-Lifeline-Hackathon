@@ -1,16 +1,16 @@
-import { Schema } from '@powersync/web';
+import { Schema, Table, column } from '@powersync/web';
 
 export const AppSchema = new Schema({
-  lists: {
-    name: 'TEXT',
-    owner_id: 'TEXT'
-  },
-  todos: {
-    created_at: 'TEXT',
-    completed_at: 'TEXT',
-t    completed: 'INTEGER',
-    description: 'TEXT',
-    list_id: 'TEXT',
-    owner_id: 'TEXT'
-  }
+  lists: new Table({
+    name: column.text,
+    owner_id: column.text
+  }),
+  todos: new Table({
+    created_at: column.text,
+    completed_at: column.text,
+    completed: column.integer,
+    description: column.text,
+    list_id: column.text,
+    owner_id: column.text
+  })
 });

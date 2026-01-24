@@ -31,9 +31,17 @@ This project has been initialized with the following features:
 
 ### Next Steps
 
-1.  **Configure Supabase**: Open `src/lib/powersync/SupabaseConnector.ts` and replace the placeholder values for `SUPABASE_URL` and `SUPABASE_ANON_KEY` with your own Supabase credentials.
-2.  **Configure PowerSync**: In the same file, replace `YOUR_POWERSYNC_INSTANCE_URL` with your PowerSync instance URL.
-3.  **Run the app**: Run `npm run dev` to start the development server.
+1.  **Create a `.env.local` file** in the root of the project.
+2.  **Add the following environment variables** to the `.env.local` file:
+
+    ```
+    NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your-supabase-anon-key
+    NEXT_PUBLIC_POWERSYNC_URL=your-powersync-instance-url
+    ```
+
+3.  **Replace the placeholder values** with your actual Supabase and PowerSync credentials.
+4.  **Run the app**: Run `npm run dev` to start the development server.
 
 ## Learn More
 

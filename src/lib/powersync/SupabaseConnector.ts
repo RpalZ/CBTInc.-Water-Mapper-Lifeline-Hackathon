@@ -1,9 +1,12 @@
 import { PowerSyncDatabase, AbstractPowerSyncDatabase } from '@powersync/web';
 import { SupabaseClient } from '@supabase/supabase-js';
 
-// Replace with your Supabase URL and anon key
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY as string;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Missing Supabase environment variables');
+}
 
 class SupabaseConnector {
   private powerSync: PowerSyncDatabase;
@@ -27,7 +30,10 @@ class SupabaseConnector {
     }
 
     // Replace with your PowerSync instance URL
-    const powerSyncUrl = 'YOUR_POWERSYNC_INSTANCE_URL';
+    const powerSyncUrl = process.env.NEXT_PUBLIC_POWERSYNC_URL;
+    if (!powerSyncUrl) {
+      throw new Error('Missing PowerSync environment variable');
+    }
     const response = await fetch(powerSyncUrl, {
       method: 'GET',
       headers: {
