@@ -4,8 +4,11 @@ import { SupabaseClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY as string;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('Missing Supabase environment variables');
+// The PowerSync instance URL from your PowerSync project dashboard
+const POWERSYNC_URL = process.env.NEXT_PUBLIC_POWERSYNC_URL as string;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !POWERSYNC_URL) {
+  throw new Error('Missing Supabase or PowerSync environment variables');
 }
 
 class SupabaseConnector {
@@ -23,34 +26,17 @@ class SupabaseConnector {
       console.error('Error getting session:', error);
       return null;
     }
-    const token = data.session?.access_token;
-    if (!token) {
-      console.error('No access token found');
+    const session = data.session;
+    if (!session) {
+      console.error('No active session found');
       return null;
     }
 
-    // Replace with your PowerSync instance URL
-    const powerSyncUrl = process.env.NEXT_PUBLIC_POWERSYNC_URL;
-    if (!powerSyncUrl) {
-      throw new Error('Missing PowerSync environment variable');
-    }
-    const response = await fetch(powerSyncUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    if (!response.ok) {
-      console.error('Error fetching PowerSync credentials:', await response.text());
-      return null;
-    }
-
-    const { endpoint, token: psToken } = await response.json();
+    // Use the Supabase access token directly
     return {
-      endpoint,
-      token: psToken,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60) // Assume token expires in 1 hour
+      endpoint: POWERSYNC_URL,
+      token: session.access_token,
+      expiresAt: session.expires_at ? new Date(session.expires_at * 1000) : undefined
     };
   }
 
@@ -61,7 +47,7 @@ class SupabaseConnector {
     }
 
     try {
-      // Create a single Supabase transaction
+      // This part remains the same. You still need the RPC function.
       const { error } = await this.supabase.rpc('powersync_write_data', {
         data: transaction.crud
       });

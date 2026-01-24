@@ -1,16 +1,17 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PowerSyncProviderWithHydration } from "@/lib/powersync/PowerSyncContext";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Water Mapper Lifeline",
   description: "A lifeline for water mapping.",
-  themeColor: "#ffffff",
   manifest: "/manifest.webmanifest",
-  viewport: "width=device-width, initial-scale=1",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -20,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body>
         <PowerSyncProviderWithHydration>
           {children}
         </PowerSyncProviderWithHydration>

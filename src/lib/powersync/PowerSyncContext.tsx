@@ -7,25 +7,28 @@ import { PropsWithChildren, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import SupabaseConnector from './SupabaseConnector';
 
-const powerSync = new PowerSyncDatabase({
-  schema: AppSchema,
-  database: {
-    dbFilename: 'powersync.db'
-  }
-});
-
 const PowerSyncProvider = ({ children }: PropsWithChildren) => {
-  const [_, setReady] = useState(false);
+  const [powerSync, setPowerSync] = useState<PowerSyncDatabase | null>(null);
 
   useEffect(() => {
     const init = async () => {
-      const connector = new SupabaseConnector(powerSync);
-      await powerSync.connect(connector);
-      setReady(true);
+      const db = new PowerSyncDatabase({
+        schema: AppSchema,
+        database: {
+          dbFilename: 'powersync.db'
+        }
+      });
+      const connector = new SupabaseConnector(db);
+      await db.connect(connector);
+      setPowerSync(db);
     };
 
     init();
   }, []);
+
+  if (!powerSync) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <PowerSyncContext.Provider value={powerSync}>
