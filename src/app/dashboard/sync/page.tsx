@@ -46,21 +46,21 @@ export default function SyncPage() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-semibold text-gray-900 dark:text-gray-50 mb-2">
+        <h1 className="text-3xl font-semibold text-primary mb-2">
           {t.sync.title}
         </h1>
-        <p className="text-gray-600 dark:text-gray-400">
+        <p className="text-secondary">
           {t.sync.description}
         </p>
       </div>
 
       {/* Sync Status Panel */}
       <div
-        className={`bg-white dark:bg-gray-900 rounded-lg border ${currentStatus.borderColor} p-8 mb-8`}
+        className={`bg-primary border ${currentStatus.borderColor} rounded-lg p-8 mb-8`}
       >
         <div className="flex items-center gap-4 mb-6">
           <div className={`w-4 h-4 ${currentStatus.color} rounded-full`}></div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
+          <h2 className="text-xl font-semibold text-primary">
             {t.sync.currentStatus} {currentStatus.label}
           </h2>
         </div>
@@ -76,25 +76,25 @@ export default function SyncPage() {
               syncStatus === 'syncing' ? 'animate-pulse' : ''
             }`}
           ></div>
-          <span className="text-sm text-gray-600 dark:text-gray-400">
+          <span className="text-sm text-secondary">
             {currentStatus.connectionStatus}
           </span>
         </div>
       </div>
 
       {/* Additional Info */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-4">
+      <div className="bg-primary border border-color rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-primary mb-4">
           {t.sync.aboutSyncStatus}
         </h2>
-        <div className="space-y-3 text-gray-600 dark:text-gray-400">
+        <div className="space-y-3 text-secondary">
           <p>
             {t.sync.aboutSyncDescription1}
           </p>
           <p>
             {t.sync.aboutSyncDescription2}
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-500 mt-4">
+          <p className="text-sm text-muted mt-4">
             {t.sync.aboutSyncNote}
           </p>
         </div>

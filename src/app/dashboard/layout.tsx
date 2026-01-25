@@ -11,7 +11,7 @@ export default function DashboardLayout({
 }) {
   return (
     <LanguageProvider>
-      <div className="flex h-screen bg-gray-50 dark:bg-black">
+      <div className="flex h-screen bg-secondary">
         <DashboardSidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <DashboardHeader />

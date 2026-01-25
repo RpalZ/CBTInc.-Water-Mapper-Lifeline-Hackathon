@@ -20,7 +20,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-black px-4">
+    <div className="flex min-h-screen items-center justify-center bg-secondary px-4">
       <div className="w-full max-w-md">
         {/* Header with theme toggle */}
         <div className="flex justify-end mb-8">
@@ -28,11 +28,11 @@ export default function LoginPage() {
         </div>
 
         {/* Login form */}
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-8">
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50 mb-2">
+        <div className="bg-primary border border-color rounded-lg shadow-sm p-8">
+          <h1 className="text-2xl font-semibold text-primary mb-2">
             NGO Login
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-8">
+          <p className="text-secondary mb-8">
             Sign in to access your account
           </p>
 
@@ -41,7 +41,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="block text-sm font-medium text-primary mb-2"
               >
                 Email
               </label>
@@ -51,7 +51,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your.email@example.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-50 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors"
+                className="w-full px-4 py-2 border input-border rounded-md input-bg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors"
                 disabled={isSubmitting}
               />
             </div>
@@ -60,7 +60,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                className="block text-sm font-medium text-primary mb-2"
               >
                 Password
               </label>
@@ -70,7 +70,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-50 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors"
+                className="w-full px-4 py-2 border input-border rounded-md input-bg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors"
                 disabled={isSubmitting}
               />
             </div>
@@ -79,7 +79,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 px-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+              className="w-full py-2.5 px-4 btn-primary disabled:opacity-50 disabled:cursor-not-allowed font-medium rounded-md transition-colors btn-focus focus:ring-2 focus:ring-offset-2 focus:ring-offset-primary"
             >
               {isSubmitting ? 'Signing in...' : 'Sign In'}
             </button>

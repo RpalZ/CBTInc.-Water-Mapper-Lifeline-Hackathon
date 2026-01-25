@@ -10,8 +10,10 @@ export function ThemeToggle() {
     const html = document.documentElement;
     if (dark) {
       html.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     } else {
       html.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
   }, []);
 
@@ -28,33 +30,20 @@ export function ThemeToggle() {
     setMounted(true);
   }, [applyTheme]);
 
-  const toggleTheme = useCallback(() => {
-    const newIsDark = !isDark;
-    
-    // Apply theme class immediately - do this synchronously
-    const html = document.documentElement;
-    if (newIsDark) {
-      html.classList.add('dark');
-    } else {
-      html.classList.remove('dark');
-    }
-    
-    // Update state
-    setIsDark(newIsDark);
-    
-    // Save to localStorage
-    localStorage.setItem('theme', newIsDark ? 'dark' : 'light');
-    
-    // Debug: verify class was applied
-    console.log('Theme toggled to:', newIsDark ? 'dark' : 'light');
-    console.log('HTML classes:', html.className);
-  }, [isDark]);
+  const toggleTheme = () => {
+    setIsDark(prev => {
+      const newIsDark = !prev;
+      applyTheme(newIsDark);
+      console.log('Theme toggled to:', newIsDark ? 'dark' : 'light');
+      return newIsDark;
+    });
+  };
 
   if (!mounted) {
     // Show placeholder with sun icon (light mode default)
     return (
       <button
-        className="p-2 rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+        className="p-2 rounded-md text-secondary hover-bg"
         aria-label="Toggle theme"
         disabled
       >
@@ -68,7 +57,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="p-2 rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      className="p-2 rounded-md text-secondary hover-bg transition-colors"
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >
       {isDark ? (

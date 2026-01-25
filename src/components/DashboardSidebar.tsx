@@ -17,16 +17,16 @@ export function DashboardSidebar() {
   ];
 
   return (
-    <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col h-screen">
+    <aside className="w-64 bg-primary border-r border-color flex flex-col h-screen">
       {/* Header */}
-      <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+      <div className="p-6 border-b border-color">
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
+          <h1 className="text-xl font-semibold text-primary">
             {t.sidebar.title}
           </h1>
           <LanguageSelector />
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
+        <p className="text-sm text-secondary">
           {t.sidebar.subtitle}
         </p>
       </div>
@@ -42,8 +42,8 @@ export function DashboardSidebar() {
                   href={item.href}
                   className={`block px-4 py-2.5 rounded-md transition-colors ${
                     isActive
-                      ? 'bg-green-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      ? 'btn-primary text-white'
+                      : 'text-secondary hover-bg'
                   }`}
                 >
                   {item.label}
@@ -55,7 +55,7 @@ export function DashboardSidebar() {
       </nav>
 
       {/* Footer with theme toggle */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+      <div className="p-4 border-t border-color">
         <div className="flex justify-end">
           <ThemeToggle />
         </div>
