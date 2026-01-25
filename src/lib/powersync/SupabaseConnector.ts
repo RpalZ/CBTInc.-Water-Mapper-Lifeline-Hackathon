@@ -23,12 +23,12 @@ class SupabaseConnector {
   async fetchCredentials() {
     const { data, error } = await this.supabase.auth.getSession();
     if (error) {
-      console.error('Error getting session:', error);
+      // Silently return null if no session (expected when auth is disabled)
       return null;
     }
     const session = data.session;
     if (!session) {
-      console.error('No active session found');
+      // Silently return null if no session (expected when auth is disabled)
       return null;
     }
 
