@@ -1,22 +1,32 @@
 import { PowerSyncDatabase, AbstractPowerSyncDatabase } from '@powersync/web';
 import { SupabaseClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY as string;
-
-// The PowerSync instance URL from your PowerSync project dashboard
-const POWERSYNC_URL = process.env.NEXT_PUBLIC_POWERSYNC_URL as string;
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !POWERSYNC_URL) {
-  throw new Error('Missing Supabase or PowerSync environment variables');
-}
-
 class SupabaseConnector {
   private powerSync: PowerSyncDatabase;
   private supabase: SupabaseClient;
+  private powerSyncUrl: string;
 
   constructor(powerSync: PowerSyncDatabase) {
+    // Read and validate environment variables inside constructor (client-side only)
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+    const POWERSYNC_URL = process.env.NEXT_PUBLIC_POWERSYNC_URL;
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !POWERSYNC_URL) {
+      const missing = [];
+      if (!SUPABASE_URL) missing.push('NEXT_PUBLIC_SUPABASE_URL');
+      if (!SUPABASE_ANON_KEY) missing.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY');
+      if (!POWERSYNC_URL) missing.push('NEXT_PUBLIC_POWERSYNC_URL');
+      
+      throw new Error(
+        `Missing environment variables: ${missing.join(', ')}. ` +
+        `Please ensure .env.local exists in the project root with these variables, ` +
+        `and restart the dev server after adding them.`
+      );
+    }
+
     this.powerSync = powerSync;
+    this.powerSyncUrl = POWERSYNC_URL;
     this.supabase = new SupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 
@@ -34,7 +44,7 @@ class SupabaseConnector {
 
     // Use the Supabase access token directly
     return {
-      endpoint: POWERSYNC_URL,
+      endpoint: this.powerSyncUrl,
       token: session.access_token,
       expiresAt: session.expires_at ? new Date(session.expires_at * 1000) : undefined
     };
