@@ -1,0 +1,146 @@
+---
+description: Core project rules for local-first PWA with PowerSync and Supabase
+alwaysApply: true
+---
+
+# Project Rules
+
+## 1. Project Scope & Boundaries
+
+This project is frontend-only.
+
+Do NOT modify backend logic, Supabase SQL, or PowerSync server config unless explicitly asked.
+
+Assume all backend APIs, Supabase tables, and PowerSync sync rules already exist and are correct.
+
+## 2. Core Stack (Do Not Deviate)
+
+- Next.js 15 (App Router)
+- Tailwind CSS
+- Serwist (PWA + service worker)
+- PowerSync Web SDK
+- @powersync/react
+- SQLite (WASM via OPFS) — managed entirely by PowerSync
+- Supabase Auth (JWT only, frontend usage)
+
+⚠️ Do not introduce alternative libraries, ORMs, state managers, or sync engines.
+
+## 3. Local-First Mental Model (Critical)
+
+The local SQLite database is the source of truth for the UI.
+
+UI must never depend directly on Supabase queries.
+
+**All reads:**
+- Must go through PowerSync local SQLite
+- Must use useQuery or PowerSync DB hooks
+
+**All writes:**
+- Go to the local DB first
+- PowerSync handles background sync automatically
+
+**If offline:**
+- App must remain fully usable.
+- Data must appear instantly.
+
+## 4. PowerSync Usage Rules
+
+All SQL runs against local SQLite, not PostgreSQL.
+
+Assume schema is defined in AppSchema.ts and is authoritative.
+
+Do not invent tables or columns — mirror the schema exactly.
+
+Use PowerSync APIs only for DB access.
+
+### React Integration
+
+- Use useQuery for reactive reads.
+- Components must re-render automatically when local data changes.
+- Do not manually refetch data unless explicitly needed.
+
+### Initialization
+
+PowerSyncDatabase must:
+- Be initialized client-side only
+- Be wrapped in Suspense or
+- Loaded via `dynamic(() => ..., { ssr: false })`
+- Never initialize PowerSync during SSR.
+
+## 5. Auth & Identity Rules
+
+Authentication is handled by Supabase Auth.
+
+Frontend only:
+- Retrieves the Supabase JWT
+- Passes it to PowerSync
+
+Do not implement auth logic beyond session access.
+
+Assume PowerSync sync rules already enforce row-level access.
+
+## 6. PWA & Performance Rules
+
+App must behave as a true offline-first PWA.
+
+Use Serwist only for service worker logic.
+
+**Cache:**
+- App shell
+- Static assets
+
+UI must load even with zero network.
+
+**Manifest:**
+- Must be valid
+- Must allow installation
+- Icons and metadata must not be omitted
+
+## 7. Security & Platform Constraints
+
+SharedArrayBuffer is mandatory.
+
+Middleware must set:
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Embedder-Policy: require-corp`
+
+Do not remove or weaken these headers.
+
+## 8. UI & Code Style Rules
+
+- Follow existing component patterns.
+- Reuse components instead of creating new variants.
+- No random refactors.
+- No stylistic changes unless explicitly requested.
+- Do not rename files, hooks, or components unless asked.
+
+## 9. Change Discipline (Very Important)
+
+Do not add, remove, or modify anything that was not explicitly requested.
+
+If something seems wrong:
+1. Stop
+2. Explain the issue
+3. Ask before changing it
+
+No "helpful" assumptions.
+
+## 10. Logging Requirement
+
+After every meaningful change, create a log file:
+
+`docs/logs/{YYYY-MM-DD}_{task-name}.md`
+
+Each log must include:
+- What was changed
+- Why it was changed
+- Files touched
+- Any assumptions made
+
+## 11. AI Behavior Rules
+
+- Prefer correctness over cleverness.
+- Prefer small, scoped changes.
+- Break large tasks into phases.
+- Never hallucinate APIs, hooks, or PowerSync behavior.
+- If uncertain, say so clearly.
