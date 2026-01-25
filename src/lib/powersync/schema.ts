@@ -1,16 +1,12 @@
 import { Schema, Table, column } from '@powersync/web';
 
 export const AppSchema = new Schema({
-  lists: new Table({
-    name: column.text,
-    owner_id: column.text
-  }),
-  todos: new Table({
-    created_at: column.text,
-    completed_at: column.text,
-    completed: column.integer,
-    description: column.text,
-    list_id: column.text,
-    owner_id: column.text
+  water_readings: new Table({
+    device_id: column.text,
+    recorded_at: column.text,
+    pressure_pa: column.real,
+    battery_voltage: column.real,
+    latitude: column.real,
+    longitude: column.real
   })
 });

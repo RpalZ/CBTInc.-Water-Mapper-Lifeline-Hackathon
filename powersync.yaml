@@ -1,0 +1,4 @@
+buckets:
+  - name: water_readings
+    table: water_readings
+    query: SELECT * FROM water_readings;

@@ -47,19 +47,30 @@ class SupabaseConnector {
     }
 
     try {
-      // This part remains the same. You still need the RPC function.
-      const { error } = await this.supabase.rpc('powersync_write_data', {
-        data: transaction.crud
+      const { data: { session }, error: sessionError } = await this.supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No active session for sync upload');
+      }
+
+      const response = await fetch('/api/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ batch: transaction.crud }),
       });
 
-      if (error) {
-        throw new Error(JSON.stringify(error));
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Sync API error: ${response.status} ${errorText}`);
       }
 
       await transaction.complete();
     } catch (e) {
       console.error('Error uploading data:', e);
-      // Potentially handle retry logic here
+      // Transaction is NOT completed, so it will retry later
     }
   }
 }
