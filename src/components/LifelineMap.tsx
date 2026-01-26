@@ -68,6 +68,69 @@ export default function LifelineMap() {
     );
   }, []);
 
+  // Load and display route on the map
+  const loadRoute = async () => {
+    if (!mapInstance.current) return;
+
+    try {
+      // Get route start/end points (check for overrides first)
+      const overrides = getOverrideEndpoints();
+      const endpoints = overrides || await getRouteEndpoints();
+      
+      // Fetch route from OSRM
+      const route = await fetchRoute(endpoints.start, endpoints.end);
+      
+      // Update map with the route
+      updateRoute(
+        mapInstance.current,
+        route,
+        [endpoints.start.lng, endpoints.start.lat],
+        [endpoints.end.lng, endpoints.end.lat]
+      );
+    } catch (error) {
+      console.error('Failed to load route:', error);
+      // Continue without route - don't block other functionality
+    }
+  };
+
+  // Add user location marker to map
+  const addUserLocationMarker = (latitude: number, longitude: number) => {
+    if (!mapInstance.current) return;
+
+    // Create user location marker with water droplet icon
+    const userMarker = document.createElement('div');
+    userMarker.innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="cursor: pointer;">
+        <!-- Outer glow circle -->
+        <circle cx="20" cy="20" r="19" fill="rgba(59, 130, 246, 0.15)" />
+        <!-- Water droplet -->
+        <path d="M20 8 C20 8, 14 16, 14 22 C14 27.5, 16.9 32, 20 32 C23.1 32, 26 27.5, 26 22 C26 16, 20 8, 20 8 Z" fill="#0ea5e9" stroke="#0369a1" stroke-width="1.5"/>
+        <!-- White highlight on droplet -->
+        <ellipse cx="19" cy="18" rx="2.5" ry="3.5" fill="white" opacity="0.6"/>
+      </svg>
+    `;
+
+    if (userLocationMarker.current) {
+      userLocationMarker.current.remove();
+    }
+
+    userLocationMarker.current = new maplibregl.Marker({ element: userMarker, anchor: 'center' })
+      .setLngLat([longitude, latitude])
+      .setPopup(new maplibregl.Popup().setHTML(
+        `<b>Your Location</b><br/>` +
+        `Latitude: ${latitude.toFixed(6)}<br/>` +
+        `Longitude: ${longitude.toFixed(6)}`
+      ))
+      .addTo(mapInstance.current);
+
+    // Center map on user location
+    mapInstance.current.flyTo({
+      center: [longitude, latitude],
+      zoom: 14,
+      duration: 1000
+    });
+  };
+
   useEffect(() => {
     if (!mapContainer.current) return;
     if (mapInstance.current) return; // Initialize only once
@@ -108,25 +171,23 @@ export default function LifelineMap() {
 
       mapInstance.current.addControl(new maplibregl.NavigationControl(), 'top-right');
       
-      // Load initial route on map load
-      mapInstance.current.on('load', async () => {
+      // Load initial route and user location on map load
+      mapInstance.current.once('load', async () => {
         // Initialize route layer for OSRM routing visualization
         // Must be done after style is loaded
         initRouteLayer(mapInstance.current!);
         await loadRoute();
+        
+        // Add user location marker after route is loaded
+        if (userLocation) {
+          addUserLocationMarker(userLocation.lat, userLocation.lng);
+        }
       });
       
       mapInstance.current.on('error', (e) => {
         console.warn('Map error:', e);
         // Don't block the UI, just log. 
         // Common error: Source "doha" not found if pmtiles file is missing.
-      });
-
-      // Wait for map to fully load before adding user location marker
-      mapInstance.current.once('load', () => {
-        if (userLocation) {
-          addUserLocationMarker(userLocation.lat, userLocation.lng);
-        }
       });
 
     } catch (err: any) {
@@ -179,44 +240,6 @@ export default function LifelineMap() {
       }
     });
   }, [readings]);
-
-  // Add user location marker to map
-  const addUserLocationMarker = (latitude: number, longitude: number) => {
-    if (!mapInstance.current) return;
-
-    // Create user location marker with water droplet icon
-    const userMarker = document.createElement('div');
-    userMarker.innerHTML = `
-      <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="cursor: pointer;">
-        <!-- Outer glow circle -->
-        <circle cx="20" cy="20" r="19" fill="rgba(59, 130, 246, 0.15)" />
-        <!-- Water droplet -->
-        <path d="M20 8 C20 8, 14 16, 14 22 C14 27.5, 16.9 32, 20 32 C23.1 32, 26 27.5, 26 22 C26 16, 20 8, 20 8 Z" fill="#0ea5e9" stroke="#0369a1" stroke-width="1.5"/>
-        <!-- White highlight on droplet -->
-        <ellipse cx="19" cy="18" rx="2.5" ry="3.5" fill="white" opacity="0.6"/>
-      </svg>
-    `;
-
-    if (userLocationMarker.current) {
-      userLocationMarker.current.remove();
-    }
-
-    userLocationMarker.current = new maplibregl.Marker({ element: userMarker, anchor: 'center' })
-      .setLngLat([longitude, latitude])
-      .setPopup(new maplibregl.Popup().setHTML(
-        `<b>Your Location</b><br/>` +
-        `Latitude: ${latitude.toFixed(6)}<br/>` +
-        `Longitude: ${longitude.toFixed(6)}`
-      ))
-      .addTo(mapInstance.current);
-
-    // Center map on user location
-    mapInstance.current.flyTo({
-      center: [longitude, latitude],
-      zoom: 14,
-      duration: 1000
-    });
-  };
 
   if (mapError) {
       return <div className="p-4 bg-red-50 text-red-500 rounded">Map Error: {mapError}</div>;
