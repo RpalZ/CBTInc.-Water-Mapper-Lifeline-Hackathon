@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import LifelineMap from '@/components/LifelineMap';
 
@@ -12,6 +13,48 @@ export default function OverviewPage() {
     lastSyncTime: '2 minutes ago',
     appStatus: 'Online',
   };
+
+  useEffect(() => {
+    const fetchRoutes = async () => {
+      // --- Mock data for the routing request (similar to what mock_data_generator.py would produce) ---
+      const mockRoutingRequest = {
+        locations: [
+          { "id": "depot", "lat": 15.5007, "lon": 32.5596, "demand": 0, "optional_visit": false },
+          { "id": "customer_1", "lat": 15.5257, "lon": 32.5846, "demand": 250, "optional_visit": false },
+          { "id": "customer_2", "lat": 15.4757, "lon": 32.5346, "demand": 150, "optional_visit": true, "drop_penalty": 15000 },
+          { "id": "customer_3", "lat": 15.5107, "lon": 32.5000, "demand": 200, "optional_visit": false },
+          { "id": "customer_4", "lat": 15.4800, "lon": 32.5700, "demand": 100, "optional_visit": true, "drop_penalty": 10000 }
+        ],
+        num_vehicles: 2,
+        depot_index: 0,
+        max_distance_meters: 60000 // 60km max route for each vehicle
+      };
+
+      try {
+        const response = await fetch('/api/routing/solve', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(mockRoutingRequest),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('Error fetching routes:', errorData);
+          return;
+        }
+
+        const data = await response.json();
+        console.log('Optimized Routes from OR-Tools:', data);
+
+      } catch (error) {
+        console.error('Failed to fetch routes:', error);
+      }
+    };
+
+    fetchRoutes();
+  }, []); // Run once on component mount
 
   return (
     <div className="p-8">
@@ -112,3 +155,4 @@ export default function OverviewPage() {
     </div>
   );
 }
+

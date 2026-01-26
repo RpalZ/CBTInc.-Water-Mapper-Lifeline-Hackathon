@@ -18,3 +18,6 @@
 
 ## Logging
 - After making changes, please summarize and log your changes in docs/logs using a formatted name: {date}_{task-name}.md
+
+## Checking lint errors
+- After every change pls check lint errors too.

@@ -33,21 +33,24 @@ export default function LifelineMap() {
     if (mapInstance.current) return; // Initialize only once
 
     try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      console.log('Map configuration:', {
+        supabaseUrl,
+        exampleSourceUrl: `pmtiles://${supabaseUrl}/storage/v1/object/public/maps/sudan_1.pmtiles`
+      });
+
       mapInstance.current = new maplibregl.Map({
         container: mapContainer.current,
-        center: [51.528, 25.319], // Doha West Bay
+        center: [32.5599, 15.5007], // Khartoum, Sudan
         zoom: 12,
         style: {
           version: 8,
           sources: {
-            'doha': {
-              type: 'vector',
-              // NOTE: This URL expects the file to be present in Supabase storage.
-              // If missing, the map background will be blank, but markers will still appear.
-              url: `pmtiles://${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/maps/doha.pmtiles`,
-              attribution: '© OpenStreetMap'
-            },
-            // Fallback source (OSM Raster) so the user sees SOMETHING if they haven't uploaded the PMTiles yet.
+            'sudan1': { type: 'vector', url: `pmtiles://${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/maps/sudan_1.pmtiles`, attribution: '© OpenStreetMap' },
+            'sudan2': { type: 'vector', url: `pmtiles://${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/maps/sudan_2.pmtiles`, attribution: '© OpenStreetMap' },
+            'sudan3': { type: 'vector', url: `pmtiles://${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/maps/sudan_3.pmtiles`, attribution: '© OpenStreetMap' },
+            'sudan4': { type: 'vector', url: `pmtiles://${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/maps/sudan_4.pmtiles`, attribution: '© OpenStreetMap' },
+            'sudan5': { type: 'vector', url: `pmtiles://${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/maps/sudan_5.pmtiles`, attribution: '© OpenStreetMap' },
             'osm': {
                 type: 'raster',
                 tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
@@ -57,11 +60,27 @@ export default function LifelineMap() {
           },
           layers: [
             { id: 'bg', type: 'background', paint: { 'background-color': '#f0f2f5' } },
-            // Fallback raster layer
             { id: 'osm-layer', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 19 },
-            // Vector layers (will sit on top if data exists)
-            { id: 'water', type: 'fill', source: 'doha', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
-            { id: 'roads', type: 'line', source: 'doha', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } }
+            
+            // Layer 1
+            { id: 'water-1', type: 'fill', source: 'sudan1', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
+            { id: 'roads-1', type: 'line', source: 'sudan1', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
+            
+            // Layer 2
+            { id: 'water-2', type: 'fill', source: 'sudan2', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
+            { id: 'roads-2', type: 'line', source: 'sudan2', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
+
+            // Layer 3
+            { id: 'water-3', type: 'fill', source: 'sudan3', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
+            { id: 'roads-3', type: 'line', source: 'sudan3', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
+
+            // Layer 4
+            { id: 'water-4', type: 'fill', source: 'sudan4', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
+            { id: 'roads-4', type: 'line', source: 'sudan4', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
+
+            // Layer 5
+            { id: 'water-5', type: 'fill', source: 'sudan5', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
+            { id: 'roads-5', type: 'line', source: 'sudan5', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } }
           ]
         }
       });
@@ -74,9 +93,10 @@ export default function LifelineMap() {
         // Common error: Source "doha" not found if pmtiles file is missing.
       });
 
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error("Failed to initialize map:", err);
-        setMapError(err.message);
+        const message = err instanceof Error ? err.message : String(err);
+        setTimeout(() => setMapError(message), 0);
     }
 
     return () => {
