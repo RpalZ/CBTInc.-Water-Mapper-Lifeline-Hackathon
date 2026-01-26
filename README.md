@@ -1,59 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 💧 WaterMapper Lifeline: Autonomous Crisis Logistics
 
-## Getting Started
+**WaterMapper Lifeline** is an offline-first, AI-powered logistics platform designed to optimize water distribution in crisis zones like Sudan. It combines real-time sensor data, predictive demand modeling, and advanced vehicle routing to ensure critical resources reach the communities that need them most—even without internet connectivity.
 
-First, run the development server:
+![Project Status](https://img.shields.io/badge/Status-Active_Development-green)
+![Tech Stack](https://img.shields.io/badge/Stack-Next.js_|_PowerSync_|_Python_|_OR--Tools-blue)
 
+---
+
+## 🚀 Key Features
+
+### 1. 🌍 Local-First PWA (Offline Capability)
+Built for unreliable networks. The entire application runs directly on the user's device.
+- **PowerSync & SQLite:** Data is stored locally in the browser via OPFS (Origin Private File System) and syncs with the cloud only when a connection is available.
+- **Serwist:** Service worker management ensures the app loads instantly, offline.
+- **MapLibre:** Vector maps are rendered client-side using cached PMTiles, allowing navigation without a live map server.
+
+### 2. 🚛 Advanced Fleet Optimization (OR-Tools)
+A dedicated Python microservice that solves the **Multi-Depot Capacitated Vehicle Routing Problem (MDVRP)**.
+- **Constraint Programming:** Considers vehicle capacity (Liters), maximum fuel range (km), and community demand urgency.
+- **Multi-Depot:** Optimizes fleets operating simultaneously from Khartoum, Port Sudan, El Obeid, and Nyala.
+- **Resilience:** Uses soft constraints to "do the best possible" rather than failing if resources are tight (no "No Solution" errors).
+
+### 3. 🗺️ Hybrid Routing Visualization
+- **Backend Planner:** Google OR-Tools calculates the optimal *sequence* of stops.
+- **Frontend Visualizer:** The React app fetches real-world road geometries from OSRM (Open Source Routing Machine) to display turn-by-turn paths on the map.
+- **Interactive Dashboard:** Operators can filter vehicles, view demand scoreboards, and identify critical shortages instantly.
+
+### 4. 📊 Data-Driven Demand (ML Ready)
+- **Sensor Integration:** Designed to ingest telemetry from IoT water tank sensors (`pressure_pa`, `battery_voltage`).
+- **Demand Prediction:** Uses historical usage patterns to forecast liters required per community, replacing reactive "emergency calls" with proactive delivery schedules.
+
+---
+
+## 🛠️ Technical Architecture
+
+### Frontend (Next.js 15)
+- **Framework:** Next.js App Router
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS
+- **Map Engine:** MapLibre GL JS + PMTiles
+- **State/Sync:** `@powersync/react`
+
+### Backend & Data
+- **Database:** Supabase (PostgreSQL)
+- **Sync Engine:** PowerSync Service
+- **Optimization Service:** Python (FastAPI) + Google OR-Tools
+- **Routing API:** OSRM (Public/Self-hosted)
+
+### Optimization Logic Flow
+1.  **Input:** Frontend gathers community locations and predicted demands.
+2.  **Request:** Next.js Proxy (`/api/routing/solve`) forwards data to Python Service.
+3.  **Solve:** Python Service (`/solve-vrp`) runs OR-Tools algorithms to minimize total distance.
+4.  **Response:** Optimized stop sequences returned to Frontend.
+5.  **Render:** Frontend fetches road segments from OSRM and draws the fleet plan.
+
+---
+
+## 🏁 Getting Started
+
+### Prerequisites
+- Node.js 18+
+- Python 3.10+
+- Supabase Account
+- PowerSync Account
+
+### 1. Clone & Install Frontend
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/your-repo/water-mapper.git
+cd water-mapper
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure Environment
+Create a `.env.local` file:
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_supabase_anon_key
+NEXT_PUBLIC_POWERSYNC_URL=your_powersync_url
+ROUTING_SERVICE_URL=http://localhost:5000/solve-vrp
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Start the Optimization Engine (Python)
+Navigate to the service directory:
+```bash
+cd routing_service
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 5000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. Start the Application
+In the root directory:
+```bash
+npm run dev
+```
+Open `http://localhost:3000` to see the WaterMapper Dashboard.
 
-## Project Initialization
+---
 
-This project has been initialized with the following features:
+## 📂 Project Structure
 
-*   **Next.js 15 App Router**: The latest version of Next.js with the App Router.
-*   **PWA with Serwist**: The project is configured as a Progressive Web App using Serwist, with a service worker for offline capabilities.
-*   **PowerSync**: The project is set up to use PowerSync for offline-first data synchronization.
-*   **Supabase**: The project is configured to use Supabase as the backend, but you need to provide your own credentials.
+```
+├── src/
+│   ├── app/                 # Next.js App Router pages
+│   ├── components/          # React components (LifelineMap, etc.)
+│   ├── lib/
+│   │   ├── map/             # MapLibre & Layer helpers
+│   │   ├── routing/         # OSRM & Route Source logic
+│   │   └── powersync/       # Database Schema & Connectors
+├── routing_service/         # Python Microservice (OR-Tools)
+│   ├── main.py              # FastAPI application & Solver logic
+│   └── mock_data...         # Test data generators
+├── supabase/                # SQL Migrations
+└── docs/                    # Detailed architectural documentation
+```
 
-### Next Steps
+## 🤝 Contributing
+Contributions are welcome! Please check the `docs/` folder for detailed implementation guides on Routing, Database, and Maps.
 
-1.  **Create a `.env.local` file** in the root of the project.
-2.  **Add the following environment variables** to the `.env.local` file:
+---
 
-    ```
-    NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your-supabase-anon-key
-    NEXT_PUBLIC_POWERSYNC_URL=your-powersync-instance-url
-    ```
-
-3.  **Replace the placeholder values** with your actual Supabase and PowerSync credentials.
-4.  **Run the app**: Run `npm run dev` to start the development server.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+*Built with ❤️ for the future of humanitarian logistics.*

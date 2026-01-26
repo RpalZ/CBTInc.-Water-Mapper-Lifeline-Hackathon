@@ -44,16 +44,8 @@ export function initRouteLayer(map: maplibregl.Map) {
       'line-cap': 'round',
     },
     paint: {
-      // Style lines based on the 'vehicle_id' property
-      'line-color': [
-        'case',
-        ['==', ['get', 'vehicle_id'], 0], routeColors[0],
-        ['==', ['get', 'vehicle_id'], 1], routeColors[1],
-        ['==', ['get', 'vehicle_id'], 2], routeColors[2],
-        ['==', ['get', 'vehicle_id'], 3], routeColors[3],
-        ['==', ['get', 'vehicle_id'], 4], routeColors[4],
-        '#000000' // Default color if vehicle_id is not matched
-      ],
+      // Use the color passed in properties, fallback to blue
+      'line-color': ['coalesce', ['get', 'color'], '#3b82f6'],
       'line-width': 4,
       'line-opacity': 0.8,
     },
