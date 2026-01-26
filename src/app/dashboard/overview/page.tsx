@@ -1,6 +1,7 @@
 'use client';
 
 import { useLanguage } from '@/contexts/LanguageContext';
+import LifelineMap from '@/components/LifelineMap';
 
 export default function OverviewPage() {
   const { t } = useLanguage();
@@ -86,6 +87,16 @@ export default function OverviewPage() {
           <p className="text-3xl font-semibold text-primary">
             {mockData.appStatus}
           </p>
+        </div>
+      </div>
+
+      {/* Map Section */}
+      <div className="bg-primary border border-color rounded-lg p-6 mb-8 h-[500px] flex flex-col">
+        <h2 className="text-lg font-semibold text-primary mb-4">
+          Sensor Map
+        </h2>
+        <div className="flex-grow relative border border-color rounded-lg overflow-hidden">
+             <LifelineMap />
         </div>
       </div>
 
