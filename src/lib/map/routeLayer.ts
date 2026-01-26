@@ -22,14 +22,11 @@ const ROUTE_END_LAYER_ID = 'route-end';
  * 
  * Must be called after map.on('load') event
  */
-export function initRouteLayer(map: maplibregl.Map): void {
-  if (map.getSource(ROUTE_SOURCE_ID)) {
-    console.warn('Route source already initialized');
-    return;
-  }
+export function initRouteLayer(map: maplibregl.Map) {
+  // Define a set of colors for different vehicles
+  const routeColors = ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48'];
 
-  // Create empty GeoJSON source
-  map.addSource(ROUTE_SOURCE_ID, {
+  map.addSource('route', {
     type: 'geojson',
     data: {
       type: 'FeatureCollection',
@@ -37,61 +34,80 @@ export function initRouteLayer(map: maplibregl.Map): void {
     },
   });
 
-  // Route line layer - clean blue with rounded caps and joins
-  map.addLayer(
-    {
-      id: ROUTE_LAYER_ID,
-      type: 'line',
-      source: ROUTE_SOURCE_ID,
-      filter: ['==', ['geometry-type'], 'LineString'],
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': '#3b82f6', // Vibrant blue
-        'line-width': 4,
-        'line-opacity': 0.8,
-      },
+  // Layer for the route lines
+  map.addLayer({
+    id: 'route-line',
+    type: 'line',
+    source: 'route',
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round',
     },
-    'roads' // Insert before roads layer for better visibility
-  );
+    paint: {
+      // Style lines based on the 'vehicle_id' property
+      'line-color': [
+        'case',
+        ['==', ['get', 'vehicle_id'], 0], routeColors[0],
+        ['==', ['get', 'vehicle_id'], 1], routeColors[1],
+        ['==', ['get', 'vehicle_id'], 2], routeColors[2],
+        ['==', ['get', 'vehicle_id'], 3], routeColors[3],
+        ['==', ['get', 'vehicle_id'], 4], routeColors[4],
+        '#000000' // Default color if vehicle_id is not matched
+      ],
+      'line-width': 4,
+      'line-opacity': 0.8,
+    },
+  });
 
-  // Start point marker layer
-  map.addLayer(
-    {
-      id: ROUTE_START_LAYER_ID,
-      type: 'circle',
-      source: ROUTE_SOURCE_ID,
-      filter: ['==', ['get', 'type'], 'start'],
-      paint: {
-        'circle-radius': 8,
-        'circle-color': '#10b981', // Green
-        'circle-opacity': 0.9,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#ffffff',
-      },
+  // Layer for start points (depot)
+  map.addLayer({
+    id: 'route-start',
+    type: 'circle',
+    source: 'route',
+    filter: ['==', ['get', 'type'], 'start'],
+    paint: {
+      'circle-radius': 8,
+      'circle-color': '#16a34a',
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 2,
     },
-    'roads'
-  );
+  });
 
-  // End point marker layer
-  map.addLayer(
-    {
-      id: ROUTE_END_LAYER_ID,
-      type: 'circle',
-      source: ROUTE_SOURCE_ID,
-      filter: ['==', ['get', 'type'], 'end'],
-      paint: {
-        'circle-radius': 8,
-        'circle-color': '#ef4444', // Red
-        'circle-opacity': 0.9,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': '#ffffff',
-      },
+  // Layer for end points (customer locations)
+  map.addLayer({
+    id: 'route-end',
+    type: 'circle',
+    source: 'route',
+    filter: ['==', ['get', 'type'], 'end'],
+    paint: {
+      'circle-radius': 6,
+      'circle-color': '#ef4444',
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 2,
     },
-    'roads'
-  );
+  });
+
+  // Layer for destination labels
+  map.addLayer({
+    id: 'route-labels',
+    type: 'symbol',
+    source: 'route',
+    filter: ['==', '$type', 'Point'],
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+      'text-offset': [0, 1.2],
+      'text-anchor': 'top',
+      'text-size': 12,
+      'text-allow-overlap': false,
+      'text-ignore-placement': false,
+    },
+    paint: {
+      'text-color': '#333333',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 2,
+    },
+  });
 }
 
 /**
@@ -102,81 +118,31 @@ export function initRouteLayer(map: maplibregl.Map): void {
  * @param startCoord - Start point [lng, lat]
  * @param endCoord - End point [lng, lat]
  */
-export function updateRoute(
-  map: maplibregl.Map,
-  route: RouteResponse,
-  startCoord: [number, number],
-  endCoord: [number, number]
-): void {
-  try {
-    const source = map.getSource(ROUTE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+// This function now accepts a FeatureCollection to draw multiple routes and points
+export function updateRoute(map: maplibregl.Map, features: GeoJSON.FeatureCollection) {
+  const source = map.getSource('route') as maplibregl.GeoJSONSource;
+  if (source) {
+    source.setData(features);
 
-    if (!source) {
-      console.error('Route source not found. Call initRouteLayer first.');
-      return;
+    // Fit map to the bounds of all features
+    const bounds = new maplibregl.LngLatBounds();
+    features.features.forEach(feature => {
+      if (feature.geometry.type === 'LineString') {
+        feature.geometry.coordinates.forEach(coord => {
+          bounds.extend(coord as [number, number]);
+        });
+      } else if (feature.geometry.type === 'Point') {
+        bounds.extend(feature.geometry.coordinates as [number, number]);
+      }
+    });
+
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, {
+        padding: 50,
+        maxZoom: 15,
+        duration: 1000,
+      });
     }
-
-    // Validate route geometry with detailed logging
-    console.log('Route object:', route);
-    console.log('Route geometry:', route?.geometry);
-    console.log('Route coordinates:', route?.geometry?.coordinates);
-    console.log('Coordinates is array?', Array.isArray(route?.geometry?.coordinates));
-    
-    if (!route?.geometry) {
-      console.error('Route has no geometry:', route);
-      return;
-    }
-
-    if (!Array.isArray(route.geometry.coordinates)) {
-      console.error('Invalid route geometry - coordinates not an array:', route.geometry);
-      return;
-    }
-
-    if (route.geometry.coordinates.length === 0) {
-      console.error('Route has no coordinates');
-      return;
-    }
-
-    // Create feature collection with route line and endpoints
-    const features = [
-      // Route line
-      route,
-      // Start point
-      {
-        type: 'Feature' as const,
-        geometry: {
-          type: 'Point' as const,
-          coordinates: startCoord,
-        },
-        properties: {
-          type: 'start',
-        },
-      },
-      // End point
-      {
-        type: 'Feature' as const,
-        geometry: {
-          type: 'Point' as const,
-          coordinates: endCoord,
-        },
-        properties: {
-          type: 'end',
-        },
-      },
-    ];
-
-    const geojson = {
-      type: 'FeatureCollection' as const,
-      features,
-    };
-
-    console.log('Setting GeoJSON data:', geojson);
-    source.setData(geojson);
-
-    // Optionally fit map to route bounds
-    fitMapToRoute(map, route);
-  } catch (error) {
-    console.error('Error updating route:', error);
   }
 }
 
