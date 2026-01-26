@@ -1,0 +1,205 @@
+/* Marker Pin Styling */
+.markerContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.markerPin {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #0077b6 0%, #005f99 100%);
+  border-radius: 50% 50% 50% 0;
+  box-shadow: 0 2px 8px rgba(0, 119, 182, 0.3);
+  transform: rotate(-45deg) scale(1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.markerIcon {
+  width: 20px;
+  height: 20px;
+  fill: #ffffff;
+  transform: rotate(45deg);
+}
+
+/* Hover and Active States */
+.markerContainer:hover .markerPin,
+.markerContainer.active .markerPin {
+  transform: rotate(-45deg) scale(1.3);
+  box-shadow: 0 6px 16px rgba(0, 119, 182, 0.5);
+}
+
+.markerContainer.active {
+  z-index: 1000;
+}
+
+/* Detail Panel (Popup) */
+.detailPanel {
+  max-width: 280px;
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  animation: panelSlideIn 0.3s ease-out;
+  overflow: hidden;
+}
+
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.detailContent {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #0077b6 0%, #005f99 100%);
+  color: #ffffff;
+  border-bottom: 1px solid rgba(0, 119, 182, 0.2);
+}
+
+.detailTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  transition: opacity 0.2s;
+}
+
+.closeButton:hover {
+  opacity: 0.8;
+}
+
+.closeButton svg {
+  width: 16px;
+  height: 16px;
+  stroke: #ffffff;
+}
+
+.detailBody {
+  padding: 12px 14px;
+  color: var(--text-primary, #171717);
+  font-size: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.detailRow {
+  display: flex;
+  margin-bottom: 8px;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.detailRow:last-child {
+  margin-bottom: 0;
+}
+
+.detailLabel {
+  font-weight: 600;
+  color: var(--text-secondary, #6b7280);
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.detailValue {
+  color: var(--text-primary, #171717);
+  word-break: break-word;
+  flex: 1;
+}
+
+/* Status Badge */
+.statusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.statusBadge.status-active {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #047857;
+}
+
+.statusBadge.status-alert {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+
+.statusBadge.status-inactive {
+  background-color: rgba(107, 114, 128, 0.15);
+  color: #4b5563;
+}
+
+/* Dark mode adjustments */
+html.dark .statusBadge.status-active {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+html.dark .statusBadge.status-alert {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+html.dark .statusBadge.status-inactive {
+  background-color: rgba(107, 114, 128, 0.2);
+  color: #d1d5db;
+}
+
+/* Scrollbar styling for detail panel */
+.detailBody::-webkit-scrollbar {
+  width: 4px;
+}
+
+.detailBody::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.detailBody::-webkit-scrollbar-thumb {
+  background: var(--text-secondary, #6b7280);
+  border-radius: 2px;
+}
+
+.detailBody::-webkit-scrollbar-thumb:hover {
+  background: var(--text-primary, #171717);
+}
