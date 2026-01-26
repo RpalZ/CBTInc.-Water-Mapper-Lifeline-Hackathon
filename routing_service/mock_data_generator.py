@@ -9,40 +9,53 @@ from main import Location, SolveRequest # Import Pydantic models from main.py
 
 def generate_mock_request(
     num_customers: int = 10,
-    num_vehicles: int = 3,
-    depot_lat: float = 15.5007, # Example: Khartoum, Sudan
+    num_vehicles: int = 4,
+    num_depots: int = 2, # New: Number of depots
+    depot_lat: float = 15.5007, # Khartoum
     depot_lon: float = 32.5596,
-    max_demand_per_customer: int = 300, # Max predicted water demand
+    max_demand_per_customer: int = 300,
     min_demand_per_customer: int = 50,
-    max_lat_offset: float = 0.05, # Max degrees offset from depot for customers
-    max_lon_offset: float = 0.05,
-    max_distance_meters: int = 50000 # Max 50km for vehicles
+    max_lat_offset: float = 2.0, # Increased offset for wider spread
+    max_lon_offset: float = 2.0,
+    max_distance_meters: int = 2000000, # 2000km
+    vehicle_capacity: int = 2500
 ) -> SolveRequest:
     """
     Generates a mock SolveRequest object for testing the VRP solver.
-    This data is purely for development and testing.
     """
     all_locations: List[Location] = []
 
-    # Add Depot Location
-    depot_location = Location(id="depot", lat=depot_lat, lon=depot_lon, demand=0)
-    all_locations.append(depot_location)
-    depot_index = 0 # Depot is always the first location
+    # Generate Depots
+    # We'll spread them out a bit
+    for i in range(num_depots):
+        offset_lat = (i * 2.0) # Simple offset
+        offset_lon = (i * 2.0)
+        depot_location = Location(
+            id=f"depot_{i}", 
+            lat=depot_lat + offset_lat, 
+            lon=depot_lon + offset_lon, 
+            demand=0,
+            optional_visit=False
+        )
+        all_locations.append(depot_location)
+
+    # Assign Vehicles to Depots
+    # Distribute vehicles evenly among depots
+    vehicle_depots = []
+    for v in range(num_vehicles):
+        vehicle_depots.append(v % num_depots)
 
     # Add Customer Locations
     for i in range(num_customers):
-        # Generate random offsets for latitude and longitude
+        # Generate random offsets
         lat_offset = random.uniform(-max_lat_offset, max_lat_offset)
         lon_offset = random.uniform(-max_lon_offset, max_lon_offset)
         
         customer_lat = depot_lat + lat_offset
         customer_lon = depot_lon + lon_offset
         
-        # Generate random demand for each customer
         customer_demand = random.randint(min_demand_per_customer, max_demand_per_customer)
-        
-        # Decide if this visit is optional (e.g., 30% chance)
-        is_optional = random.random() < 0.3
+        is_optional = random.random() < 0.2
         
         customer_location = Location(
             id=f"customer_{i+1}",
@@ -50,8 +63,7 @@ def generate_mock_request(
             lon=customer_lon,
             demand=customer_demand,
             optional_visit=is_optional,
-            # Assign a penalty only if the visit is optional
-            drop_penalty=random.randint(10000, 20000) if is_optional else None
+            drop_penalty=15000 if is_optional else None
         )
         all_locations.append(customer_location)
 
@@ -59,20 +71,19 @@ def generate_mock_request(
     mock_request = SolveRequest(
         locations=all_locations,
         num_vehicles=num_vehicles,
-        depot_index=depot_index,
-        max_distance_meters=max_distance_meters
+        depot_index=0, # Fallback
+        vehicle_depots=vehicle_depots,
+        max_distance_meters=max_distance_meters,
+        vehicle_capacity=vehicle_capacity
     )
     
     return mock_request
 
 if __name__ == "__main__":
-    # Example usage: Generate a request with 15 customers and 4 vehicles
     mock_data = generate_mock_request(
-        num_customers=15,
+        num_customers=20,
         num_vehicles=4,
-        depot_lat=15.5007, # Khartoum, Sudan
-        depot_lon=32.5596,
-        max_distance_meters=60000 # Example: 60km max route for each vehicle
+        num_depots=2
     )
     
     print("--- Generated Mock SolveRequest (JSON format) ---")

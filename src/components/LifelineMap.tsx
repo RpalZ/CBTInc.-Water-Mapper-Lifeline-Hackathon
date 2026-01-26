@@ -4,148 +4,272 @@ import maplibregl from 'maplibre-gl';
 import { useQuery } from '@powersync/react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { initMapLibre } from '@/lib/map/initMap';
-import { initRouteLayer, updateRoute, clearRoute } from '@/lib/map/routeLayer';
+import { initRouteLayer, updateRoute } from '@/lib/map/routeLayer';
 import { fetchRoute } from '@/lib/routing/osrm';
-import { getRouteEndpoints, getOverrideEndpoints } from '@/lib/routing/routeSource';
 
 // Initialize map protocols globally once
 initMapLibre();
+
+// Types for VRP Solver Response
+interface RouteLocation {
+  id: string;
+  lat: number;
+  lon: number;
+  demand?: number;
+}
+
+interface VehicleRoute {
+  vehicle_id: number;
+  locations: RouteLocation[];
+  total_distance_meters: number;
+}
+
+interface SolveResponse {
+  routes: VehicleRoute[];
+  status: string;
+  dropped_node_ids?: string[];
+}
 
 export default function LifelineMap() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<maplibregl.Map | null>(null);
   const markers = useRef<{ [key: string]: maplibregl.Marker }>({});
-  const userLocationMarker = useRef<maplibregl.Marker | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  
+  // Vehicle Filtering State
+  const [availableVehicles, setAvailableVehicles] = useState<number[]>([]);
+  const [visibleVehicles, setVisibleVehicles] = useState<number[]>([]);
 
   // Fetch sensors from local SQLite
-  // We'll use the water_readings table. 
-  // In a real app, you might want the LATEST reading per device.
-  // For now, we will just fetch all and let the latest one overwrite the marker position/status if duplicates exist for a device,
-  // or just show them all. 
-  // Optimization: Group by device_id in SQL if possible, or handle in JS.
-  // Let's try to get the latest reading for each device using a subquery or simplified approach.
-  // PowerSync runs SQLite, so standard SQL works.
   const { data: readings } = useQuery(`
     SELECT device_id, latitude, longitude, pressure_pa, battery_voltage, recorded_at 
     FROM water_readings 
     ORDER BY recorded_at ASC
   `);
 
-  // Get user location
+  // Update map filters when visibleVehicles changes
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation not supported in your browser');
-      return;
-    }
+    if (!mapInstance.current) return;
+    const map = mapInstance.current;
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-        setLocationError(null);
-      },
-      (error) => {
-        let errorMsg = 'Unable to get location';
-        if (error.code === 1) {
-          errorMsg = 'Location permission denied. Enable it in browser settings.';
-        } else if (error.code === 2) {
-          errorMsg = 'Location unavailable.';
-        } else if (error.code === 3) {
-          errorMsg = 'Location request timed out.';
-        }
-        setLocationError(errorMsg);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
-      }
-    );
-  }, []);
+    // Wait until layers are loaded before filtering
+    if (!map.isStyleLoaded()) return;
 
-  // Load and display route on the map
-  const loadRoute = async () => {
+    const filter = ['in', ['get', 'vehicle_id'], ['literal', visibleVehicles]];
+
+    if (map.getLayer('route-line')) map.setFilter('route-line', filter);
+    if (map.getLayer('route-end')) map.setFilter('route-end', ['all', ['==', ['get', 'type'], 'end'], filter]);
+    if (map.getLayer('route-start')) map.setFilter('route-start', ['all', ['==', ['get', 'type'], 'start'], filter]);
+    if (map.getLayer('route-labels')) map.setFilter('route-labels', filter);
+
+  }, [visibleVehicles]);
+
+  // Orchestrator: Call VRP Solver -> Get OSRM Geometry -> Update Map
+  const loadFleetRoutes = async () => {
     if (!mapInstance.current) return;
 
     try {
-      // Get route start/end points (check for overrides first)
-      const overrides = getOverrideEndpoints();
-      const endpoints = overrides || await getRouteEndpoints();
+      console.log('Starting Fleet Route Optimization with 20 Sudan Communities...');
+
+      // 1. Prepare Request Payload for VRP Solver
+      // Define 4 Regional Depots
+      const DEPOTS = [
+        { id: "depot_khartoum", lat: 15.5007, lon: 32.5599, label: "Khartoum Depot" },
+        { id: "depot_port_sudan", lat: 19.6175, lon: 37.2164, label: "Port Sudan Depot" },
+        { id: "depot_el_obeid", lat: 13.1833, lon: 30.2167, label: "El Obeid Depot" },
+        { id: "depot_nyala", lat: 12.0500, lon: 24.8833, label: "Nyala Depot" }
+      ];
+
+      // Define Communities (Customers)
+      const COMMUNITY_COORDS = [
+        [15.6133, 32.5322], [14.4015, 33.5198], 
+        [13.1747, 30.2097], [12.8628, 32.9838], [14.0000, 31.0000],
+        [15.0000, 35.0000], [13.5000, 34.0000], [12.5000, 30.5000],
+        [15.8000, 33.2000], [14.2000, 32.1000], [13.9000, 35.5000],
+        [14.8000, 34.5000], [15.2000, 31.8000], [12.9000, 33.9000],
+        [13.2000, 31.2000], [14.5000, 33.1000], [15.4000, 32.8000],
+        [13.7000, 30.8000], [15.1000, 33.6000], [14.1000, 32.5000]
+      ];
+
+      // Merge into a single locations array (Depots MUST come first)
+      const locations = [
+        ...DEPOTS.map(d => ({
+          id: d.id,
+          lat: d.lat,
+          lon: d.lon,
+          demand: 0,
+          optional_visit: false
+        })),
+        ...COMMUNITY_COORDS.map((coords, i) => ({
+          id: `community_${i}`,
+          lat: coords[0],
+          lon: coords[1],
+          demand: Math.floor(Math.random() * 300) + 600, // High demand: 600-900L per community
+          optional_visit: Math.random() < 0.2,
+          drop_penalty: 15000
+        }))
+      ];
+
+      const num_vehicles = 10; // Scaled up fleet
+      const num_depots = DEPOTS.length;
+      // Distribute vehicles evenly among depots: [0, 1, 2, 3, 0, 1, ...]
+      const vehicle_depots = Array.from({ length: num_vehicles }, (_, i) => i % num_depots);
+
+      const routingRequest = {
+        locations: locations,
+        num_vehicles: num_vehicles,
+        depot_index: 0,
+        vehicle_depots: vehicle_depots,
+        max_distance_meters: 2000000,
+        vehicle_capacity: 2500
+      };
+
+      // 2. Call VRP Solver API
+      const response = await fetch('/api/routing/solve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(routingRequest),
+      });
+
+      if (!response.ok) {
+        throw new Error(`VRP Solver failed: ${response.statusText}`);
+      }
       
-      // Fetch route from OSRM
-      const route = await fetchRoute(endpoints.start, endpoints.end);
+      const solution: SolveResponse = await response.json();
+      console.log('Sudan Fleet Solution Received:', solution);
+
+      // Initialize filter state
+      const vehicleIds = solution.routes.map(r => r.vehicle_id);
+      setAvailableVehicles(vehicleIds);
+      setVisibleVehicles(vehicleIds);
+
+      // 3. Process Routes: Fetch OSRM geometry for each segment
+      const allFeatures: GeoJSON.Feature[] = [];
+
+      // 3a. Explicitly add all Depot Markers so they are always visible
+      DEPOTS.forEach(depot => {
+          allFeatures.push({
+             type: 'Feature',
+             geometry: { type: 'Point', coordinates: [depot.lon, depot.lat] },
+             properties: {
+               vehicle_id: -1, // -1 indicates infrastructure (depot), not a specific route
+               type: 'start',
+               id: depot.id,
+               label: depot.label,
+               demand: 0
+             }
+          });
+      });
+
+      // Utility for rate limiting
+      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      for (const vehicleRoute of solution.routes) {
+        const routeLocs = vehicleRoute.locations;
+        const vehicleFeatures: GeoJSON.Feature[] = [];
+
+        // Fetch segments sequentially to avoid rate limits
+        for (let i = 0; i < routeLocs.length - 1; i++) {
+          const start = routeLocs[i];
+          const end = routeLocs[i + 1];
+          
+          try {
+            const route = await fetchRoute(
+              { lng: start.lon, lat: start.lat },
+              { lng: end.lon, lat: end.lat }
+            );
+            
+            vehicleFeatures.push({
+              type: 'Feature',
+              geometry: route.geometry,
+              properties: {
+                vehicle_id: vehicleRoute.vehicle_id,
+                type: 'line',
+                distance: route.properties.distance,
+                duration: route.properties.duration,
+                total_route_distance: vehicleRoute.total_distance_meters
+              }
+            });
+            
+            // Wait 250ms between requests to respect OSRM rate limits
+            await sleep(250); 
+            
+          } catch (e) {
+            console.warn(`OSRM fallback for ${start.id}->${end.id}`, e);
+            vehicleFeatures.push({
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: [[start.lon, start.lat], [end.lon, end.lat]]
+              },
+              properties: {
+                vehicle_id: vehicleRoute.vehicle_id,
+                type: 'line',
+                is_fallback: true,
+                total_route_distance: vehicleRoute.total_distance_meters
+              }
+            });
+          }
+        }
+        
+        allFeatures.push(...vehicleFeatures);
+
+        // Add markers for stops
+        routeLocs.forEach((loc, index) => {
+           const isDepot = loc.id.startsWith('depot');
+           let label = loc.id;
+           
+           if (isDepot) {
+               // Format "depot_port_sudan" -> "Port Sudan Depot"
+               const name = loc.id.replace('depot_', '').split('_')
+                   .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                   .join(' ');
+               label = `${name} Depot`;
+           } else {
+               label = `Community ${loc.id.split('_')[1]}`;
+           }
+
+           allFeatures.push({
+             type: 'Feature',
+             geometry: { type: 'Point', coordinates: [loc.lon, loc.lat] },
+             properties: {
+               vehicle_id: vehicleRoute.vehicle_id,
+               type: isDepot ? 'start' : 'end',
+               id: loc.id,
+               label: label,
+               stop_sequence: index,
+               demand: loc.demand
+             }
+           });
+        });
+        
+        // Progress update: update map after each vehicle is processed so user sees progress
+        updateRoute(mapInstance.current, {
+            type: 'FeatureCollection',
+            features: allFeatures
+        });
+      }
       
-      // Update map with the route
-      updateRoute(
-        mapInstance.current,
-        route,
-        [endpoints.start.lng, endpoints.start.lat],
-        [endpoints.end.lng, endpoints.end.lat]
-      );
+      // Final update not needed as we update incrementally above, but good for safety
+      updateRoute(mapInstance.current, {
+        type: 'FeatureCollection',
+        features: allFeatures
+      });
+
     } catch (error) {
-      console.error('Failed to load route:', error);
-      // Continue without route - don't block other functionality
+      console.error('Failed to load Sudan fleet routes:', error);
     }
-  };
-
-  // Add user location marker to map
-  const addUserLocationMarker = (latitude: number, longitude: number) => {
-    if (!mapInstance.current) return;
-
-    // Create user location marker with water droplet icon
-    const userMarker = document.createElement('div');
-    userMarker.innerHTML = `
-      <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="cursor: pointer;">
-        <!-- Outer glow circle -->
-        <circle cx="20" cy="20" r="19" fill="rgba(59, 130, 246, 0.15)" />
-        <!-- Water droplet -->
-        <path d="M20 8 C20 8, 14 16, 14 22 C14 27.5, 16.9 32, 20 32 C23.1 32, 26 27.5, 26 22 C26 16, 20 8, 20 8 Z" fill="#0ea5e9" stroke="#0369a1" stroke-width="1.5"/>
-        <!-- White highlight on droplet -->
-        <ellipse cx="19" cy="18" rx="2.5" ry="3.5" fill="white" opacity="0.6"/>
-      </svg>
-    `;
-
-    if (userLocationMarker.current) {
-      userLocationMarker.current.remove();
-    }
-
-    userLocationMarker.current = new maplibregl.Marker({ element: userMarker, anchor: 'center' })
-      .setLngLat([longitude, latitude])
-      .setPopup(new maplibregl.Popup().setHTML(
-        `<b>Your Location</b><br/>` +
-        `Latitude: ${latitude.toFixed(6)}<br/>` +
-        `Longitude: ${longitude.toFixed(6)}`
-      ))
-      .addTo(mapInstance.current);
-
-    // Center map on user location
-    mapInstance.current.flyTo({
-      center: [longitude, latitude],
-      zoom: 14,
-      duration: 1000
-    });
   };
 
   useEffect(() => {
     if (!mapContainer.current) return;
-    if (mapInstance.current) return; // Initialize only once
+    if (mapInstance.current) return;
 
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      console.log('Map configuration:', {
-        supabaseUrl,
-        exampleSourceUrl: `pmtiles://${supabaseUrl}/storage/v1/object/public/maps/sudan_1.pmtiles`
-      });
-
       mapInstance.current = new maplibregl.Map({
         container: mapContainer.current,
-        center: [32.5599, 15.5007], // Khartoum, Sudan
-        zoom: 12,
+        center: [32.5599, 15.5007],
+        zoom: 6,
         style: {
           version: 8,
           sources: {
@@ -164,24 +288,14 @@ export default function LifelineMap() {
           layers: [
             { id: 'bg', type: 'background', paint: { 'background-color': '#f0f2f5' } },
             { id: 'osm-layer', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 19 },
-            
-            // Layer 1
             { id: 'water-1', type: 'fill', source: 'sudan1', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
             { id: 'roads-1', type: 'line', source: 'sudan1', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
-            
-            // Layer 2
             { id: 'water-2', type: 'fill', source: 'sudan2', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
             { id: 'roads-2', type: 'line', source: 'sudan2', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
-
-            // Layer 3
             { id: 'water-3', type: 'fill', source: 'sudan3', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
             { id: 'roads-3', type: 'line', source: 'sudan3', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
-
-            // Layer 4
             { id: 'water-4', type: 'fill', source: 'sudan4', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
             { id: 'roads-4', type: 'line', source: 'sudan4', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } },
-
-            // Layer 5
             { id: 'water-5', type: 'fill', source: 'sudan5', 'source-layer': 'water', paint: { 'fill-color': '#90e0ef' } },
             { id: 'roads-5', type: 'line', source: 'sudan5', 'source-layer': 'roads', paint: { 'line-color': '#ffffff' } }
           ]
@@ -190,89 +304,63 @@ export default function LifelineMap() {
 
       mapInstance.current.addControl(new maplibregl.NavigationControl(), 'top-right');
       
-      // Load initial route and user location on map load
       mapInstance.current.once('load', async () => {
-        // Initialize route layer for OSRM routing visualization
-        // Must be done after style is loaded
-        initRouteLayer(mapInstance.current!);
-        await loadRoute();
+        const map = mapInstance.current!;
+        initRouteLayer(map);
         
-        // Add user location marker after route is loaded
-        if (userLocation) {
-          addUserLocationMarker(userLocation.lat, userLocation.lng);
-        }
-      });
-      
-      mapInstance.current.on('error', (e) => {
-        console.warn('Map error:', e);
-        // Don't block the UI, just log. 
-        // Common error: Source "doha" not found if pmtiles file is missing.
+        const interactiveLayers = ['route-line', 'route-start', 'route-end'];
+        interactiveLayers.forEach(layer => {
+          map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+        });
+
+        map.on('click', 'route-line', (e) => {
+          if (!e.features?.[0]) return;
+          const props = e.features[0].properties;
+          new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>Vehicle ${props?.vehicle_id}</b><br/>Dist: ${(props?.total_route_distance/1000).toFixed(1)}km`).addTo(map);
+        });
+
+        map.on('click', 'route-end', (e) => {
+          if (!e.features?.[0]) return;
+          const props = e.features[0].properties;
+          new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>${props?.label}</b><br/>Demand: ${props?.demand}L`).addTo(map);
+        });
+
+        await loadFleetRoutes();
       });
 
-    } catch (err: unknown) {
+    } catch (err: any) {
         console.error("Failed to initialize map:", err);
-        const message = err instanceof Error ? err.message : String(err);
-        setTimeout(() => setMapError(message), 0);
+        setMapError(err.message);
     }
 
     return () => {
       mapInstance.current?.remove();
       mapInstance.current = null;
     };
-  }, [userLocation]);
+  }, []);
 
-  // Sync markers with PowerSync data
-  useEffect(() => {
-    if (!mapInstance.current || !readings) return;
-
-    readings.forEach(reading => {
-      // Basic validation
-      if (!reading.latitude || !reading.longitude || !reading.device_id) return;
-
-      const deviceId = reading.device_id;
-      
-      // Determine color based on pressure (simulated water level logic)
-      // Assuming higher pressure = higher water level. 
-      // Adjust thresholds as needed.
-      const isHigh = (reading.pressure_pa || 0) > 2000; 
-      const color = isHigh ? '#0077b6' : '#ff4d4d'; // Blue (safe/wet) vs Red (low/alert) - or vice versa depending on semantics
-
-      if (markers.current[deviceId]) {
-        markers.current[deviceId].setLngLat([reading.longitude, reading.latitude]);
-        // Update popup content if needed
-         const popup = markers.current[deviceId].getPopup();
-         popup.setHTML(
-            `<b>${deviceId}</b><br/>` +
-            `Pressure: ${reading.pressure_pa} Pa<br/>` +
-            `Battery: ${reading.battery_voltage} V`
-         );
-      } else {
-        const m = new maplibregl.Marker({ color })
-          .setLngLat([reading.longitude, reading.latitude])
-          .setPopup(new maplibregl.Popup().setHTML(
-            `<b>${deviceId}</b><br/>` +
-            `Pressure: ${reading.pressure_pa} Pa<br/>` +
-            `Battery: ${reading.battery_voltage} V`
-          ))
-          .addTo(mapInstance.current!);
-        
-        markers.current[deviceId] = m;
-      }
-    });
-  }, [readings]);
-
-  if (mapError) {
-      return <div className="p-4 bg-red-50 text-red-500 rounded">Map Error: {mapError}</div>;
-  }
+  if (mapError) return <div className="p-4 bg-red-50 text-red-500">Map Error: {mapError}</div>;
 
   return (
-    <div>
-      {locationError && (
-        <div className="mb-3 p-3 bg-yellow-50 text-yellow-700 rounded text-sm">
-          ⚠️ {locationError}
+    <div className="relative h-full w-full">
+      {availableVehicles.length > 0 && (
+        <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-zinc-900/95 p-4 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 min-w-[160px]">
+          <h3 className="text-sm font-semibold mb-3">🚛 Fleet Status</h3>
+          <div className="space-y-2">
+            {availableVehicles.map(id => (
+              <label key={id} className="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" checked={visibleVehicles.includes(id)} onChange={(e) => {
+                  setVisibleVehicles(prev => e.target.checked ? [...prev, id] : prev.filter(v => v !== id));
+                }} className="rounded text-blue-600" />
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48'][id % 5] }} />
+                <span className="text-sm">Vehicle {id}</span>
+              </label>
+            ))}
+          </div>
         </div>
       )}
-      <div ref={mapContainer} style={{ width: '100%', height: '100%', borderRadius: '12px', minHeight: '400px' }} />
+      <div ref={mapContainer} style={{ width: '100%', height: '100%', borderRadius: '12px', minHeight: '600px' }} />
     </div>
   );
 }

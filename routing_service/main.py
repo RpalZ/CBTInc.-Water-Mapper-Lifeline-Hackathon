@@ -22,8 +22,10 @@ class SolveRequest(BaseModel):
     """The request body for the VRP solver."""
     locations: List[Location]
     num_vehicles: int
-    depot_index: int # The index of the depot in the locations list
+    depot_index: int # Default depot if vehicle_depots is not provided
+    vehicle_depots: Optional[List[int]] = None # Optional: [loc_idx_for_v0, loc_idx_for_v1, ...]
     max_distance_meters: Optional[int] = 50000 # Default 50km if not specified
+    vehicle_capacity: Optional[int] = 2000 # Default 2000L capacity per vehicle
 
 class Route(BaseModel):
     """Represents the solved route for a single vehicle."""
@@ -111,13 +113,22 @@ def solve_vrp(request: SolveRequest):
             demands[i] = request.locations[i].demand if request.locations[i].demand is not None else 200
     
     # C. Define Vehicle Capacities
-    # Each vehicle can carry 2000 units.
-    vehicle_capacities = [2000] * num_vehicles
+    # Use capacity from request or default
+    vehicle_capacities = [request.vehicle_capacity] * num_vehicles
 
     # --- 2. Create Routing Index Manager ---
-    manager = pywrapcp.RoutingIndexManager(
-        num_locations, num_vehicles, depot_index
-    )
+    if request.vehicle_depots and len(request.vehicle_depots) == num_vehicles:
+        # Multi-Depot Mode: Each vehicle has its own start/end node
+        starts = request.vehicle_depots
+        ends = request.vehicle_depots
+        manager = pywrapcp.RoutingIndexManager(
+            num_locations, num_vehicles, starts, ends
+        )
+    else:
+        # Single Depot Mode: All vehicles start/end at depot_index
+        manager = pywrapcp.RoutingIndexManager(
+            num_locations, num_vehicles, depot_index
+        )
 
     # --- 3. Create Routing Model ---
     routing = pywrapcp.RoutingModel(manager)
