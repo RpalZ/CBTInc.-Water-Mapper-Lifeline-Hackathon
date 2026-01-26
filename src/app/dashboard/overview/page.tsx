@@ -134,7 +134,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Map Section */}
-      <div className="bg-primary border border-color rounded-lg p-6 mb-8 h-[500px] flex flex-col">
+      <div className="bg-primary border border-color rounded-lg p-6 mb-8 h-[800px] flex flex-col">
         <h2 className="text-lg font-semibold text-primary mb-4">
           Sensor Map
         </h2>

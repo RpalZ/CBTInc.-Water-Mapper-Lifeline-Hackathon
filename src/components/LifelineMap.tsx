@@ -40,6 +40,12 @@ export default function LifelineMap() {
   const [availableVehicles, setAvailableVehicles] = useState<number[]>([]);
   const [visibleVehicles, setVisibleVehicles] = useState<number[]>([]);
 
+  // Fleet Statistics State
+  const [fleetStats, setFleetStats] = useState<{
+    totalDemand: number;
+    topDemands: { label: string; demand: number }[];
+  } | null>(null);
+
   // Fetch sensors from local SQLite
   const { data: readings } = useQuery(`
     SELECT device_id, latitude, longitude, pressure_pa, battery_voltage, recorded_at 
@@ -49,10 +55,10 @@ export default function LifelineMap() {
 
   // Update map filters when visibleVehicles changes
   useEffect(() => {
+    // ... (existing filter logic)
     if (!mapInstance.current) return;
     const map = mapInstance.current;
 
-    // Wait until layers are loaded before filtering
     if (!map.isStyleLoaded()) return;
 
     const filter = ['in', ['get', 'vehicle_id'], ['literal', visibleVehicles]];
@@ -69,26 +75,45 @@ export default function LifelineMap() {
     if (!mapInstance.current) return;
 
     try {
-      console.log('Starting Fleet Route Optimization with 20 Sudan Communities...');
+      console.log('Starting Fleet Route Optimization with 10 Depots & 30 Communities...');
 
       // 1. Prepare Request Payload for VRP Solver
-      // Define 4 Regional Depots
+      // Define 10 Regional Depots across Sudan
       const DEPOTS = [
         { id: "depot_khartoum", lat: 15.5007, lon: 32.5599, label: "Khartoum Depot" },
         { id: "depot_port_sudan", lat: 19.6175, lon: 37.2164, label: "Port Sudan Depot" },
         { id: "depot_el_obeid", lat: 13.1833, lon: 30.2167, label: "El Obeid Depot" },
-        { id: "depot_nyala", lat: 12.0500, lon: 24.8833, label: "Nyala Depot" }
+        { id: "depot_nyala", lat: 12.0500, lon: 24.8833, label: "Nyala Depot" },
+        { id: "depot_kassala", lat: 15.4500, lon: 36.4000, label: "Kassala Depot" },
+        { id: "depot_dongola", lat: 19.1667, lon: 30.4833, label: "Dongola Depot" },
+        { id: "depot_wad_madani", lat: 14.4012, lon: 33.5199, label: "Wad Madani Depot" },
+        { id: "depot_al_fashir", lat: 13.6333, lon: 25.3500, label: "Al Fashir Depot" },
+        { id: "depot_sennar", lat: 13.5500, lon: 33.5667, label: "Sennar Depot" },
+        { id: "depot_atbara", lat: 17.8333, lon: 33.9667, label: "Atbara Depot" }
       ];
 
-      // Define Communities (Customers)
+      // Define 30 Communities (Customers) spread across these regions
       const COMMUNITY_COORDS = [
-        [15.6133, 32.5322], [14.4015, 33.5198], 
-        [13.1747, 30.2097], [12.8628, 32.9838], [14.0000, 31.0000],
-        [15.0000, 35.0000], [13.5000, 34.0000], [12.5000, 30.5000],
-        [15.8000, 33.2000], [14.2000, 32.1000], [13.9000, 35.5000],
-        [14.8000, 34.5000], [15.2000, 31.8000], [12.9000, 33.9000],
-        [13.2000, 31.2000], [14.5000, 33.1000], [15.4000, 32.8000],
-        [13.7000, 30.8000], [15.1000, 33.6000], [14.1000, 32.5000]
+        // Khartoum Region
+        [15.6000, 32.5000], [15.4000, 32.6000], [15.7000, 32.4000],
+        // Port Sudan Region
+        [19.5000, 37.1000], [19.7000, 37.3000], [19.4000, 37.0000],
+        // El Obeid Region
+        [13.1000, 30.1000], [13.3000, 30.3000], [13.0000, 30.4000],
+        // Nyala Region
+        [12.1000, 24.9000], [11.9000, 24.8000], [12.2000, 25.0000],
+        // Kassala Region
+        [15.3500, 36.3000], [15.5500, 36.5000], [15.2500, 36.2000],
+        // Dongola Region
+        [19.1000, 30.4000], [19.2500, 30.5500], [19.0000, 30.3500],
+        // Wad Madani Region
+        [14.3000, 33.4000], [14.5000, 33.6000], [14.2000, 33.7000],
+        // Al Fashir Region
+        [13.5000, 25.2000], [13.7000, 25.4000], [13.8000, 25.5000],
+        // Sennar Region
+        [13.4500, 33.4500], [13.6500, 33.6500], [13.3500, 33.7500],
+        // Atbara Region
+        [17.7000, 33.8000], [17.9000, 34.0000], [17.6000, 34.1000]
       ];
 
       // Merge into a single locations array (Depots MUST come first)
@@ -104,15 +129,30 @@ export default function LifelineMap() {
           id: `community_${i}`,
           lat: coords[0],
           lon: coords[1],
-          demand: Math.floor(Math.random() * 300) + 600, // High demand: 600-900L per community
-          optional_visit: Math.random() < 0.2,
-          drop_penalty: 15000
+          demand: Math.floor(Math.random() * 2000) + 800, // High demand
+          optional_visit: true, // Resilience
+          drop_penalty: 1000000
         }))
       ];
 
-      const num_vehicles = 10; // Scaled up fleet
-      const num_depots = DEPOTS.length;
-      // Distribute vehicles evenly among depots: [0, 1, 2, 3, 0, 1, ...]
+      // Calculate Insights: Demand Scoreboard
+      const communitiesOnly = locations.filter(l => l.id.startsWith('community'));
+      const totalDemand = communitiesOnly.reduce((sum, c) => sum + (c.demand || 0), 0);
+      const sortedDemands = communitiesOnly
+        .map(c => ({
+            label: `Community ${c.id.split('_')[1]}`,
+            demand: c.demand || 0
+        }))
+        .sort((a, b) => b.demand - a.demand);
+
+      setFleetStats({
+        totalDemand,
+        topDemands: sortedDemands
+      });
+
+      const num_vehicles = 20; // 20 vehicles
+      const num_depots = DEPOTS.length; // 10 depots
+      // Distribute vehicles evenly: 2 trucks per depot
       const vehicle_depots = Array.from({ length: num_vehicles }, (_, i) => i % num_depots);
 
       const routingRequest = {
@@ -120,8 +160,8 @@ export default function LifelineMap() {
         num_vehicles: num_vehicles,
         depot_index: 0,
         vehicle_depots: vehicle_depots,
-        max_distance_meters: 2000000,
-        vehicle_capacity: 2500
+        max_distance_meters: 3000000, // 3000km range
+        vehicle_capacity: 3000 // 3000L capacity
       };
 
       // 2. Call VRP Solver API
@@ -145,30 +185,33 @@ export default function LifelineMap() {
 
       // 3. Process Routes: Fetch OSRM geometry for each segment
       const allFeatures: GeoJSON.Feature[] = [];
+      const routeColors = ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'];
+      
+      // Utility for rate limiting
+      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-      // 3a. Explicitly add all Depot Markers so they are always visible
+      // 3a. Explicitly add all Depot Markers
       DEPOTS.forEach(depot => {
           allFeatures.push({
              type: 'Feature',
              geometry: { type: 'Point', coordinates: [depot.lon, depot.lat] },
              properties: {
-               vehicle_id: -1, // -1 indicates infrastructure (depot), not a specific route
+               vehicle_id: -1,
                type: 'start',
                id: depot.id,
                label: depot.label,
-               demand: 0
+               demand: 0,
+               color: '#16a34a' // Depots stay green
              }
           });
       });
 
-      // Utility for rate limiting
-      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
       for (const vehicleRoute of solution.routes) {
         const routeLocs = vehicleRoute.locations;
         const vehicleFeatures: GeoJSON.Feature[] = [];
+        const vehicleColor = routeColors[vehicleRoute.vehicle_id % routeColors.length];
 
-        // Fetch segments sequentially to avoid rate limits
+        // Fetch segments sequentially
         for (let i = 0; i < routeLocs.length - 1; i++) {
           const start = routeLocs[i];
           const end = routeLocs[i + 1];
@@ -185,13 +228,13 @@ export default function LifelineMap() {
               properties: {
                 vehicle_id: vehicleRoute.vehicle_id,
                 type: 'line',
+                color: vehicleColor,
                 distance: route.properties.distance,
                 duration: route.properties.duration,
                 total_route_distance: vehicleRoute.total_distance_meters
               }
             });
             
-            // Wait 250ms between requests to respect OSRM rate limits
             await sleep(250); 
             
           } catch (e) {
@@ -205,6 +248,7 @@ export default function LifelineMap() {
               properties: {
                 vehicle_id: vehicleRoute.vehicle_id,
                 type: 'line',
+                color: vehicleColor,
                 is_fallback: true,
                 total_route_distance: vehicleRoute.total_distance_meters
               }
@@ -220,7 +264,6 @@ export default function LifelineMap() {
            let label = loc.id;
            
            if (isDepot) {
-               // Format "depot_port_sudan" -> "Port Sudan Depot"
                const name = loc.id.replace('depot_', '').split('_')
                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                    .join(' ');
@@ -237,20 +280,19 @@ export default function LifelineMap() {
                type: isDepot ? 'start' : 'end',
                id: loc.id,
                label: label,
+               color: vehicleColor,
                stop_sequence: index,
                demand: loc.demand
              }
            });
         });
         
-        // Progress update: update map after each vehicle is processed so user sees progress
         updateRoute(mapInstance.current, {
             type: 'FeatureCollection',
             features: allFeatures
         });
       }
       
-      // Final update not needed as we update incrementally above, but good for safety
       updateRoute(mapInstance.current, {
         type: 'FeatureCollection',
         features: allFeatures
@@ -269,7 +311,7 @@ export default function LifelineMap() {
       mapInstance.current = new maplibregl.Map({
         container: mapContainer.current,
         center: [32.5599, 15.5007],
-        zoom: 6,
+        zoom: 5, // Zoom out slightly more to see all 10 depots
         style: {
           version: 8,
           sources: {
@@ -344,23 +386,83 @@ export default function LifelineMap() {
 
   return (
     <div className="relative h-full w-full">
-      {availableVehicles.length > 0 && (
-        <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-zinc-900/95 p-4 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 min-w-[160px]">
-          <h3 className="text-sm font-semibold mb-3">🚛 Fleet Status</h3>
-          <div className="space-y-2">
+      {/* Vehicle Filter & Stats Control */}
+      {(availableVehicles.length > 0 || fleetStats) && (
+        <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-zinc-900/95 p-4 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 min-w-[200px] max-h-[80vh] overflow-y-auto">
+          
+          {/* Critical Insights Section */}
+          {fleetStats && (
+            <div className="mb-4 pb-4 border-b border-gray-100 dark:border-zinc-800">
+              <h3 className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <span>🚨</span> Demand Scoreboard
+              </h3>
+              
+              <div className="space-y-1 mb-3 max-h-[200px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-zinc-700">
+                 {fleetStats.topDemands.map((comm, idx) => (
+                    <div key={comm.label} className="flex justify-between items-center text-xs p-1.5 rounded hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors">
+                        <div className="flex items-center gap-2">
+                            <span className={`font-bold w-4 text-center ${idx < 3 ? 'text-red-500' : 'text-gray-400'}`}>#{idx + 1}</span>
+                            <span className="text-gray-700 dark:text-gray-200 truncate max-w-[100px]">{comm.label}</span>
+                        </div>
+                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">{comm.demand.toLocaleString()} L</span>
+                    </div>
+                 ))}
+              </div>
+
+              <div className="mt-2 bg-gray-50 dark:bg-zinc-800/50 p-2 rounded text-center">
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-medium">Total Fleet Load</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white">
+                  {fleetStats.totalDemand.toLocaleString()} L
+                </p>
+              </div>
+            </div>
+          )}
+
+          <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-white flex items-center gap-2">
+            <span>🚛</span> Fleet Status
+          </h3>
+          <div className="space-y-2.5">
             {availableVehicles.map(id => (
-              <label key={id} className="flex items-center space-x-2 cursor-pointer">
-                <input type="checkbox" checked={visibleVehicles.includes(id)} onChange={(e) => {
-                  setVisibleVehicles(prev => e.target.checked ? [...prev, id] : prev.filter(v => v !== id));
-                }} className="rounded text-blue-600" />
-                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48'][id % 5] }} />
-                <span className="text-sm">Vehicle {id}</span>
+              <label key={id} className="flex items-center space-x-2.5 cursor-pointer group hover:bg-gray-50 dark:hover:bg-zinc-800 p-1 rounded transition-colors">
+                <input
+                  type="checkbox"
+                  checked={visibleVehicles.includes(id)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setVisibleVehicles(prev => [...prev, id]);
+                    } else {
+                      setVisibleVehicles(prev => prev.filter(v => v !== id));
+                    }
+                  }}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span 
+                  className="w-3 h-3 rounded-full shadow-sm" 
+                  style={{ backgroundColor: ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'][id % 10] }}
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">
+                  Vehicle {id}
+                </span>
               </label>
             ))}
           </div>
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800 flex justify-between text-xs text-gray-500">
+             <button 
+               onClick={() => setVisibleVehicles(availableVehicles)}
+               className="hover:text-blue-600 font-medium transition-colors"
+             >
+               Select All
+             </button>
+             <button 
+               onClick={() => setVisibleVehicles([])}
+               className="hover:text-blue-600 font-medium transition-colors"
+             >
+               Clear
+             </button>
+          </div>
         </div>
       )}
-      <div ref={mapContainer} style={{ width: '100%', height: '100%', borderRadius: '12px', minHeight: '600px' }} />
+      <div ref={mapContainer} style={{ width: '100%', height: '100%', borderRadius: '12px', minHeight: '800px' }} />
     </div>
   );
 }
