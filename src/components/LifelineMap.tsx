@@ -4,6 +4,9 @@ import maplibregl from 'maplibre-gl';
 import { useQuery } from '@powersync/react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { initMapLibre } from '@/lib/map/initMap';
+import { initRouteLayer, updateRoute, clearRoute } from '@/lib/map/routeLayer';
+import { fetchRoute } from '@/lib/routing/osrm';
+import { getRouteEndpoints, getOverrideEndpoints } from '@/lib/routing/routeSource';
 
 // Initialize map protocols globally once
 initMapLibre();
@@ -104,6 +107,14 @@ export default function LifelineMap() {
       });
 
       mapInstance.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+      
+      // Load initial route on map load
+      mapInstance.current.on('load', async () => {
+        // Initialize route layer for OSRM routing visualization
+        // Must be done after style is loaded
+        initRouteLayer(mapInstance.current!);
+        await loadRoute();
+      });
       
       mapInstance.current.on('error', (e) => {
         console.warn('Map error:', e);
