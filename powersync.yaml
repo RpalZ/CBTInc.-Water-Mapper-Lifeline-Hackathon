@@ -1,8 +1,15 @@
+# PowerSync Sync Rules
+
+# This file defines which data from the backend Postgres database
+# should be synced to the local SQLite databases on client devices.
+
+# Each entry represents a "sync bucket". The queries within a bucket
+# are executed on the backend, and the results are published to clients.
+
 bucket_definitions:
-  water_readings:
-    # Optional: parameters to filter the query
-    # parameters:
-    #   - select: current_user_id()
-    #     alias: user_id
+  global:
     data:
-      - SELECT * FROM water_readings
+      - SELECT * FROM users;
+      - SELECT * FROM device;
+      - SELECT * FROM "Locations";
+      - SELECT * FROM water_readings;
