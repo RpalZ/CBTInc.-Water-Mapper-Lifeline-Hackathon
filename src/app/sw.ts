@@ -1,6 +1,6 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { Serwist } from "serwist";
+import { Serwist, CacheFirst } from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -19,15 +19,14 @@ const serwist = new Serwist({
     {
         // Cache the .pmtiles map file
         matcher: ({ url }) => url.pathname.endsWith('.pmtiles'),
-        handler: "CacheFirst",
-        options: {
+        handler: new CacheFirst({
             cacheName: "map-tiles",
-            expiration: {
-                maxEntries: 5,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-            },
-            rangeRequests: true, // IMPORTANT for PMTiles (range requests)
-        },
+            plugins: [
+                {
+                    handlerDidError: async () => new Response('Not found', { status: 404 }),
+                },
+            ],
+        }),
     },
     ...defaultCache
   ],

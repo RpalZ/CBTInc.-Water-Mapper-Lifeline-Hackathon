@@ -12,10 +12,7 @@ export const initMapLibre = () => {
     if (maplibregl.getRTLTextPluginStatus() === 'unavailable') {
         maplibregl.setRTLTextPlugin(
         'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
-        (error) => {
-            if (error) console.error('Failed to load RTL plugin:', error);
-        },
-        true // Lazy load
+        false
         );
     }
   }
