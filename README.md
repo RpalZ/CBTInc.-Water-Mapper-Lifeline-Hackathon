@@ -54,6 +54,24 @@ A dedicated Python microservice that solves the **Multi-Depot Capacitated Vehicl
 4.  **Response:** Optimized stop sequences returned to Frontend.
 5.  **Render:** Frontend fetches road segments from OSRM and draws the fleet plan.
 
+### Machine Learning & Analytics
+
+- **Model:** Random Forest Regressor (Scikit-Learn)
+- **Serialization:** Joblib (`.pkl`)
+- **Metrics:** MSE, MAE
+
+#### Features
+- `location_encoded` — Encoded location ID  
+- `prev_day_l` — Previous-day consumption (liters)  
+- `pressure_pa` — Daily avg pressure (Pa)  
+- `device_id` — Meter identifier  
+- `day_of_week` — Extracted from timestamp  
+
+#### ML Logic Flow
+1. **Feature Engineering:** Encode locations, extract day of week, generate `prev_day_l`, aggregate daily telemetry.
+2. **Training:** Train Random Forest on daily aggregates, optimizing MAE and tracking MSE.
+3. **Inference:** Generate 24h per-location demand forecasts from latest snapshots for routing.
+
 ---
 
 ## 🏁 Getting Started
@@ -121,4 +139,4 @@ Contributions are welcome! Please check the `docs/` folder for detailed implemen
 
 ---
 
-*Built with ❤️ for the future of humanitarian logistics.*
+*CBT Inc. — Builting the future of humanitarian logistics.*
