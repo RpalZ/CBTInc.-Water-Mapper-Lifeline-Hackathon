@@ -15,20 +15,20 @@ Built for unreliable networks. The entire application runs directly on the user'
 - **Serwist:** Service worker management ensures the app loads instantly, offline.
 - **MapLibre:** Vector maps are rendered client-side using cached PMTiles, allowing navigation without a live map server.
 
-### 2. 🚛 Advanced Fleet Optimization (OR-Tools)
+### 2. 📊 Data-Driven Demand (ML Ready)
+- **Sensor Integration:** Designed to ingest telemetry from IoT water tank sensors (`pressure_pa`, `timestamp`,`location`, etc), whcich is used to find other variables such as last 24 hour demand in specific locations.
+- **Demand Prediction:** Uses historical usage patterns to forecast liters required per community in the next 24 hours, replacing reactive "emergency calls" with proactive delivery schedules.
+
+### 3. 🗺️ Hybrid Routing Visualization
+- **Backend Planner:** Google OR-Tools calculates the optimal *sequence* of stops using the demand predicted by the machine learning model.
+- **Frontend Visualizer:** The React app fetches real-world road geometries from OSRM (Open Source Routing Machine) to display turn-by-turn paths on the map.
+- **Interactive Dashboard:** Operators can filter vehicles, view demand scoreboards, and identify critical shortages instantly.
+
+### 4. 🚛 Advanced Fleet Optimization (OR-Tools)
 A dedicated Python microservice that solves the **Multi-Depot Capacitated Vehicle Routing Problem (MDVRP)**.
 - **Constraint Programming:** Considers vehicle capacity (Liters), maximum fuel range (km), and community demand urgency.
 - **Multi-Depot:** Optimizes fleets operating simultaneously from Khartoum, Port Sudan, El Obeid, and Nyala.
 - **Resilience:** Uses soft constraints to "do the best possible" rather than failing if resources are tight (no "No Solution" errors).
-
-### 3. 🗺️ Hybrid Routing Visualization
-- **Backend Planner:** Google OR-Tools calculates the optimal *sequence* of stops.
-- **Frontend Visualizer:** The React app fetches real-world road geometries from OSRM (Open Source Routing Machine) to display turn-by-turn paths on the map.
-- **Interactive Dashboard:** Operators can filter vehicles, view demand scoreboards, and identify critical shortages instantly.
-
-### 4. 📊 Data-Driven Demand (ML Ready)
-- **Sensor Integration:** Designed to ingest telemetry from IoT water tank sensors (`pressure_pa`, `battery_voltage`).
-- **Demand Prediction:** Uses historical usage patterns to forecast liters required per community, replacing reactive "emergency calls" with proactive delivery schedules.
 
 ---
 
