@@ -1,5 +1,7 @@
 # 💧 WaterMapper Lifeline: Autonomous Crisis Logistics
 
+In places of crisis, **water** is primarily **distributed** through **manual containers** such as jerry cans and tanker trucks **without real-time data** on volume delivered, routes taken, or community demand, leading to **wasted resources**, overserved areas, and entire **communities** being **missed**. 
+
 **WaterMapper Lifeline** is an offline-first, AI-powered logistics platform designed to optimize water distribution in crisis zones like Sudan. It combines real-time sensor data, predictive demand modeling, and advanced vehicle routing to ensure critical resources reach the communities that need them most—even without internet connectivity.
 
 ![Project Status](https://img.shields.io/badge/Status-Active_Development-green)
