@@ -4,6 +4,9 @@ import maplibregl from 'maplibre-gl';
 import { useQuery } from '@powersync/react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { initMapLibre } from '@/lib/map/initMap';
+import { initRouteLayer, updateRoute, clearRoute } from '@/lib/map/routeLayer';
+import { fetchRoute } from '@/lib/routing/osrm';
+import { getRouteEndpoints, getOverrideEndpoints } from '@/lib/routing/routeSource';
 
 // Initialize map protocols globally once
 initMapLibre();
@@ -13,6 +16,7 @@ export default function LifelineMap() {
   const mapInstance = useRef<maplibregl.Map | null>(null);
   const markers = useRef<{ [key: string]: maplibregl.Marker }>({});
   const [mapError, setMapError] = useState<string | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
 
   // Fetch sensors from local SQLite
   // We'll use the water_readings table. 
@@ -68,6 +72,14 @@ export default function LifelineMap() {
 
       mapInstance.current.addControl(new maplibregl.NavigationControl(), 'top-right');
       
+      // Load initial route on map load
+      mapInstance.current.on('load', async () => {
+        // Initialize route layer for OSRM routing visualization
+        // Must be done after style is loaded
+        initRouteLayer(mapInstance.current!);
+        await loadRoute();
+      });
+      
       mapInstance.current.on('error', (e) => {
         console.warn('Map error:', e);
         // Don't block the UI, just log. 
@@ -84,6 +96,61 @@ export default function LifelineMap() {
       mapInstance.current = null;
     };
   }, []);
+
+  // Load and display route from OSRM
+  const loadRoute = async () => {
+    if (!mapInstance.current) {
+      console.warn('Map instance not available for route loading');
+      return;
+    }
+    
+    try {
+      setRouteLoading(true);
+      
+      // Check if custom endpoints have been set, otherwise get defaults
+      const override = getOverrideEndpoints();
+      const endpoints = override || (await getRouteEndpoints());
+      
+      if (!endpoints?.start || !endpoints?.end) {
+        console.error('Failed to get route endpoints');
+        return;
+      }
+      
+      const { start, end } = endpoints;
+      
+      // Validate coordinates
+      if (!start.lng || !start.lat || !end.lng || !end.lat) {
+        console.error('Invalid coordinates:', { start, end });
+        return;
+      }
+      
+      // Fetch route from OSRM
+      const route = await fetchRoute(start, end);
+      
+      if (!route) {
+        console.error('Failed to fetch route from OSRM');
+        return;
+      }
+      
+      // Update map visualization
+      updateRoute(
+        mapInstance.current,
+        route,
+        [start.lng, start.lat],
+        [end.lng, end.lat]
+      );
+      
+      console.log(
+        `Route loaded: ${(route.properties.distance / 1000).toFixed(1)}km, ` +
+        `${Math.round(route.properties.duration / 60)}min`
+      );
+    } catch (error) {
+      console.error('Failed to load route:', error);
+      // Don't show error to user - routing is optional
+    } finally {
+      setRouteLoading(false);
+    }
+  };
 
   // Sync markers with PowerSync data
   useEffect(() => {
