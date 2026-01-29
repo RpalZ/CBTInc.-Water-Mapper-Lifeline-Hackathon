@@ -26,6 +26,7 @@ class SolveRequest(BaseModel):
     vehicle_depots: Optional[List[int]] = None # Optional: [loc_idx_for_v0, loc_idx_for_v1, ...]
     max_distance_meters: Optional[int] = 50000 # Default 50km if not specified
     vehicle_capacity: Optional[int] = 2000 # Default 2000L capacity per vehicle
+    vehicle_capacities: Optional[List[int]] = None # Optional: [cap_for_v0, cap_for_v1, ...]
 
 class Route(BaseModel):
     """Represents the solved route for a single vehicle."""
@@ -113,8 +114,11 @@ def solve_vrp(request: SolveRequest):
             demands[i] = request.locations[i].demand if request.locations[i].demand is not None else 200
     
     # C. Define Vehicle Capacities
-    # Use capacity from request or default
-    vehicle_capacities = [request.vehicle_capacity] * num_vehicles
+    # Use specific capacities if provided and match fleet size, otherwise use global default
+    if request.vehicle_capacities and len(request.vehicle_capacities) == num_vehicles:
+        vehicle_capacities = request.vehicle_capacities
+    else:
+        vehicle_capacities = [request.vehicle_capacity] * num_vehicles
 
     # --- 2. Create Routing Index Manager ---
     if request.vehicle_depots and len(request.vehicle_depots) == num_vehicles:

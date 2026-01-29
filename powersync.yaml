@@ -11,5 +11,6 @@ bucket_definitions:
     data:
       - SELECT * FROM users;
       - SELECT * FROM device;
-      - SELECT * FROM "Locations";
+      - SELECT * FROM location;
+      - SELECT * FROM vehicle;
       - SELECT * FROM water_readings;
