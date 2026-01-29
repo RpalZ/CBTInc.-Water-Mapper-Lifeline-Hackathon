@@ -111,29 +111,31 @@ export function initRouteLayer(map: maplibregl.Map) {
  * @param endCoord - End point [lng, lat]
  */
 // This function now accepts a FeatureCollection to draw multiple routes and points
-export function updateRoute(map: maplibregl.Map, features: GeoJSON.FeatureCollection) {
+export function updateRoute(map: maplibregl.Map, features: GeoJSON.FeatureCollection, fitToView: boolean = true) {
   const source = map.getSource('route') as maplibregl.GeoJSONSource;
   if (source) {
     source.setData(features);
 
-    // Fit map to the bounds of all features
-    const bounds = new maplibregl.LngLatBounds();
-    features.features.forEach(feature => {
-      if (feature.geometry.type === 'LineString') {
-        feature.geometry.coordinates.forEach(coord => {
-          bounds.extend(coord as [number, number]);
-        });
-      } else if (feature.geometry.type === 'Point') {
-        bounds.extend(feature.geometry.coordinates as [number, number]);
-      }
-    });
-
-    if (!bounds.isEmpty()) {
-      map.fitBounds(bounds, {
-        padding: 50,
-        maxZoom: 15,
-        duration: 1000,
+    if (fitToView) {
+      // Fit map to the bounds of all features
+      const bounds = new maplibregl.LngLatBounds();
+      features.features.forEach(feature => {
+        if (feature.geometry.type === 'LineString') {
+          feature.geometry.coordinates.forEach(coord => {
+            bounds.extend(coord as [number, number]);
+          });
+        } else if (feature.geometry.type === 'Point') {
+          bounds.extend(feature.geometry.coordinates as [number, number]);
+        }
       });
+
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, {
+          padding: 50,
+          maxZoom: 15,
+          duration: 1000,
+        });
+      }
     }
   }
 }
