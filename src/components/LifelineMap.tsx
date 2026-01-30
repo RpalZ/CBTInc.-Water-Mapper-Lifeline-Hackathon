@@ -9,6 +9,7 @@ import { fetchRoute } from '@/lib/routing/osrm';
 import CreateLocationModal from './CreateLocationModal';
 import CreateVehicleModal from './CreateVehicleModal';
 import CreateDeviceModal from './CreateDeviceModal';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // Initialize map protocols globally once
 initMapLibre();
@@ -34,6 +35,45 @@ const FIXED_DEPOTS = [
   { id: "depot_kadugli", lat: 11.0000, lon: 29.7167, label: "Kadugli Depot" },
   { id: "depot_geneina", lat: 13.4500, lon: 22.4333, label: "Geneina Depot" }
 ];
+
+// Add this near the top, after other constants
+const DEMAND_CHART_DATA = [
+  { community: 'Khartoum North', demand: 7500 },
+  { community: 'Port Sudan East', demand: 9200 },
+  { community: 'El Obeid Central', demand: 4800 },
+  { community: 'Nyala West', demand: 6100 },
+  { community: 'Kassala South', demand: 8300 },
+  { community: 'Dongola Village', demand: 2900 },
+  { community: 'Wad Madani Hub', demand: 5400 },
+  { community: 'Al Fashir Outskirts', demand: 9700 },
+  { community: 'Sennar District', demand: 1200 },
+  { community: 'Atbara Riverside', demand: 6800 },
+  { community: 'Damazin Plains', demand: 4100 },
+  { community: 'Kosti Lakeside', demand: 8500 },
+  { community: 'Gedaref Farms', demand: 3300 },
+  { community: 'Kadugli Hills', demand: 7600 },
+  { community: 'Geneina Oasis', demand: 1900 },
+  { community: 'Khartoum South', demand: 5700 },
+  { community: 'Port Sudan West', demand: 8800 },
+  { community: 'El Obeid Suburbs', demand: 2500 },
+  { community: 'Nyala Central', demand: 7200 },
+  { community: 'Kassala Markets', demand: 4600 },
+  { community: 'Dongola Desert', demand: 9300 },
+  { community: 'Wad Madani Fields', demand: 1400 },
+  { community: 'Al Fashir Nomads', demand: 6500 },
+  { community: 'Sennar Rivers', demand: 3800 },
+  { community: 'Atbara Mines', demand: 7900 },
+  { community: 'Damazin Forests', demand: 2100 },
+  { community: 'Kosti Docks', demand: 5600 },
+  { community: 'Gedaref Borders', demand: 8400 },
+];
+
+// Helper function for color coding
+const getDemandColor = (demand: number) => {
+  if (demand > 5000) return '#ef4444'; // Red for urgent
+  if (demand > 2000) return '#f97316'; // Orange for medium
+  return '#22c55e'; // Green for low
+};
 
 // Types
 interface RouteLocation {
@@ -134,6 +174,9 @@ export default function LifelineMap() {
     totalDemand: number;
     topDemands: { label: string; demand: number }[];
   } | null>(null);
+
+  // Add this new state for toggling the chart
+  const [showDemandChart, setShowDemandChart] = useState(false);
 
   const fetchData = useCallback(async () => {
     const { data: locations, error: locError } = await supabase.from('location').select('*');
@@ -696,65 +739,121 @@ export default function LifelineMap() {
               )}
               
               {routesLoaded && <button onClick={clearCache} className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded border border-red-200">Reset</button>}
+
+              {/* Add this toggle button */}
+              <button 
+                onClick={() => setShowDemandChart(!showDemandChart)} 
+                className="px-3 py-1.5 rounded-lg font-medium text-xs bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700 flex items-center gap-1.5 transition-all"
+              >
+                {showDemandChart ? '←' : '→'} Demand Chart
+              </button>
           </div>
       </div>
 
-      <div className="relative flex-grow w-full rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 shadow-sm">
-          {hoverInfo && (
-            <div className="absolute z-50 pointer-events-none bg-white dark:bg-zinc-900 p-3 rounded-lg shadow-xl border border-gray-100 dark:border-zinc-800 text-sm min-w-[150px]" style={{ left: hoverInfo.x + 15, top: hoverInfo.y + 15 }}>
-                <h4 className="font-bold text-gray-900 dark:text-white mb-1">{hoverInfo.feature.label}</h4>
-                <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                    <div className="flex justify-between"><span>Demand:</span><span className="font-mono font-bold text-blue-600">{hoverInfo.feature.demand} L</span></div>
-                    {hoverInfo.feature.vehicle_id !== -1 ? (
-                        <div className="flex justify-between border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1"><span>Vehicle:</span><span className="font-mono">#{hoverInfo.feature.vehicle_id}</span></div>
-                    ) : (
-                        <div className="flex justify-between border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1 text-red-500 font-bold uppercase tracking-tighter"><span>Status:</span><span>Unserved</span></div>
-                    )}
-                </div>
-            </div>
-          )}
-
-          {/* Stats Overlay */}
-          {(routesLoaded || fleetStats) && (
-            <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-zinc-900/95 p-4 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 min-w-[200px] max-h-[80vh] overflow-y-auto">
-              {fleetStats && (
-                <div className="mb-4 pb-4 border-b border-gray-100 dark:border-zinc-800">
-                  <h3 className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1"><span>🚨</span> Demand Scoreboard</h3>
-                  <div className="space-y-1 mb-3 max-h-[200px] overflow-y-auto pr-1">
-                     {fleetStats.topDemands.map((comm, idx) => (
-                        <div key={comm.label} className="flex justify-between items-center text-xs p-1.5 rounded hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors">
-                            <div className="flex items-center gap-2">
-                                <span className={`font-bold w-4 text-center ${idx < 3 ? 'text-red-500' : 'text-gray-400'}`}>#{idx + 1}</span>
-                                <span className="text-gray-700 dark:text-gray-200 truncate max-w-[100px]">{comm.label}</span>
-                            </div>
-                            <span className="font-bold text-gray-900 dark:text-white tabular-nums">{comm.demand.toLocaleString()} L</span>
-                        </div>
-                     ))}
-                  </div>
-                  <div className="mt-2 bg-gray-50 dark:bg-zinc-800/50 p-2 rounded text-center">
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-medium">Total Fleet Load</p>
-                    <p className="text-lg font-bold text-gray-900 dark:text-white">{fleetStats.totalDemand.toLocaleString()} L</p>
-                  </div>
-                </div>
-              )}
-
-              <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-white flex items-center gap-2"><span>🚛</span> Fleet Status</h3>
-              <div className="space-y-2.5">
-                {availableVehicles.map(id => (
-                  <label key={id} className="flex items-center space-x-2.5 cursor-pointer group hover:bg-gray-50 dark:hover:bg-zinc-800 p-1 rounded transition-colors">
-                    <input type="checkbox" checked={visibleVehicles.includes(id)} onChange={(e) => { if (e.target.checked) setVisibleVehicles(prev => [...prev, id]); else setVisibleVehicles(prev => prev.filter(v => v !== id)); }} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
-                    <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'][id % 10] }} />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">Vehicle {id}</span>
-                  </label>
-                ))}
+      <div className="relative flex-grow rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-800 shadow-sm">
+        {hoverInfo && (
+          <div className="absolute z-50 pointer-events-none bg-white dark:bg-zinc-900 p-3 rounded-lg shadow-xl border border-gray-100 dark:border-zinc-800 text-sm min-w-[150px]" style={{ left: hoverInfo.x + 15, top: hoverInfo.y + 15 }}>
+              <h4 className="font-bold text-gray-900 dark:text-white mb-1">{hoverInfo.feature.label}</h4>
+              <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                  <div className="flex justify-between"><span>Demand:</span><span className="font-mono font-bold text-blue-600">{hoverInfo.feature.demand} L</span></div>
+                  {hoverInfo.feature.vehicle_id !== -1 ? (
+                      <div className="flex justify-between border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1"><span>Vehicle:</span><span className="font-mono">#{hoverInfo.feature.vehicle_id}</span></div>
+                  ) : (
+                      <div className="flex justify-between border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1 text-red-500 font-bold uppercase tracking-tighter"><span>Status:</span><span>Unserved</span></div>
+                  )}
               </div>
-              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800 flex justify-between text-xs text-gray-500">
-                 <button onClick={() => setVisibleVehicles(availableVehicles)} className="hover:text-blue-600 font-medium transition-colors">Select All</button>
-                 <button onClick={() => setVisibleVehicles([])} className="hover:text-blue-600 font-medium transition-colors">Clear</button>
+          </div>
+        )}
+
+        {/* Stats Overlay */}
+        {(routesLoaded || fleetStats) && (
+          <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-zinc-900/95 p-4 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 min-w-[200px] max-h-[80vh] overflow-y-auto">
+            {fleetStats && (
+              <div className="mb-4 pb-4 border-b border-gray-100 dark:border-zinc-800">
+                <h3 className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1"><span>🚨</span> Demand Scoreboard</h3>
+                <div className="space-y-1 mb-3 max-h-[200px] overflow-y-auto pr-1">
+                   {fleetStats.topDemands.map((comm, idx) => (
+                      <div key={comm.label} className="flex justify-between items-center text-xs p-1.5 rounded hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors">
+                          <div className="flex items-center gap-2">
+                              <span className={`font-bold w-4 text-center ${idx < 3 ? 'text-red-500' : 'text-gray-400'}`}>#{idx + 1}</span>
+                              <span className="text-gray-700 dark:text-gray-200 truncate max-w-[100px]">{comm.label}</span>
+                          </div>
+                          <span className="font-bold text-gray-900 dark:text-white tabular-nums">{comm.demand.toLocaleString()} L</span>
+                      </div>
+                   ))}
+                </div>
+                <div className="mt-2 bg-gray-50 dark:bg-zinc-800/50 p-2 rounded text-center">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-medium">Total Fleet Load</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">{fleetStats.totalDemand.toLocaleString()} L</p>
+                </div>
               </div>
+            )}
+
+            <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-white flex items-center gap-2"><span>🚛</span> Fleet Status</h3>
+            <div className="space-y-2.5">
+              {availableVehicles.map(id => (
+                <label key={id} className="flex items-center space-x-2.5 cursor-pointer group hover:bg-gray-50 dark:hover:bg-zinc-800 p-1 rounded transition-colors">
+                  <input type="checkbox" checked={visibleVehicles.includes(id)} onChange={(e) => { if (e.target.checked) setVisibleVehicles(prev => [...prev, id]); else setVisibleVehicles(prev => prev.filter(v => v !== id)); }} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                  <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'][id % 10] }} />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">Vehicle {id}</span>
+                </label>
+              ))}
             </div>
-          )}
-          <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
+            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800 flex justify-between text-xs text-gray-500">
+               <button onClick={() => setVisibleVehicles(availableVehicles)} className="hover:text-blue-600 font-medium transition-colors">Select All</button>
+               <button onClick={() => setVisibleVehicles([])} className="hover:text-blue-600 font-medium transition-colors">Clear</button>
+            </div>
+          </div>
+        )}
+        <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
+
+        {showDemandChart && (
+          <div className="absolute inset-0 bg-white dark:bg-zinc-900 p-6 z-20">
+            <button 
+              onClick={() => setShowDemandChart(false)} 
+              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center bg-gray-200 dark:bg-zinc-700 hover:bg-gray-300 dark:hover:bg-zinc-600 rounded-full text-gray-700 dark:text-gray-300 transition-colors"
+            >
+              ✕
+            </button>
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
+              📊 Community Demand Analysis
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Bar chart showing daily water demand per community, color-coded by urgency: 
+              <span className="text-red-500 font-semibold">Red (High {'>'}5000L)</span>, 
+              <span className="text-orange-500 font-semibold">Orange (Medium 2000-5000L)</span>, 
+              <span className="text-green-500 font-semibold">Green (Low {'<'}2000L)</span>.
+            </p>
+            <ResponsiveContainer width="100%" height={500}>
+              <BarChart data={DEMAND_CHART_DATA} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis 
+                  dataKey="community" 
+                  angle={-45} 
+                  textAnchor="end" 
+                  height={80} 
+                  fontSize={12} 
+                  stroke="#6b7280" 
+                />
+                <YAxis 
+                  label={{ value: 'Demand (Liters)', angle: -90, position: 'insideLeft' }} 
+                  fontSize={12} 
+                  stroke="#6b7280" 
+                />
+                <Tooltip 
+                  formatter={(value) => [`${value} L`, 'Demand']} 
+                  labelStyle={{ color: '#374151' }} 
+                  contentStyle={{ backgroundColor: '#f9fafb', border: '1px solid #d1d5db' }} 
+                />
+                <Bar dataKey="demand" radius={[4, 4, 0, 0]}>
+                  {DEMAND_CHART_DATA.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={getDemandColor(entry.demand)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );
