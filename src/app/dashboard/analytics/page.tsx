@@ -1,15 +1,55 @@
 'use client';
 
 import { useLanguage } from '@/contexts/LanguageContext';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
+// Demand chart data
+const DEMAND_CHART_DATA = [
+  { community: 'Khartoum North', demand: 7500 },
+  { community: 'Port Sudan East', demand: 9200 },
+  { community: 'El Obeid Central', demand: 4800 },
+  { community: 'Nyala West', demand: 6100 },
+  { community: 'Kassala South', demand: 8300 },
+  { community: 'Dongola Village', demand: 2900 },
+  { community: 'Wad Madani Hub', demand: 5400 },
+  { community: 'Al Fashir Outskirts', demand: 9700 },
+  { community: 'Sennar District', demand: 1200 },
+  { community: 'Atbara Riverside', demand: 6800 },
+  { community: 'Damazin Plains', demand: 4100 },
+  { community: 'Kosti Lakeside', demand: 8500 },
+  { community: 'Gedaref Farms', demand: 3300 },
+  { community: 'Kadugli Hills', demand: 7600 },
+  { community: 'Geneina Oasis', demand: 1900 },
+  { community: 'Khartoum South', demand: 5700 },
+  { community: 'Port Sudan West', demand: 8800 },
+  { community: 'El Obeid Suburbs', demand: 2500 },
+  { community: 'Nyala Central', demand: 7200 },
+  { community: 'Kassala Markets', demand: 4600 },
+  { community: 'Dongola Desert', demand: 9300 },
+  { community: 'Wad Madani Fields', demand: 1400 },
+  { community: 'Al Fashir Nomads', demand: 6500 },
+  { community: 'Sennar Rivers', demand: 3800 },
+  { community: 'Atbara Mines', demand: 7900 },
+  { community: 'Damazin Forests', demand: 2100 },
+  { community: 'Kosti Docks', demand: 5600 },
+  { community: 'Gedaref Borders', demand: 8400 },
+];
+
+// Helper function for color coding
+const getDemandColor = (demand: number) => {
+  if (demand > 5000) return '#ef4444'; // Red for urgent
+  if (demand > 2000) return '#f97316'; // Orange for medium
+  return '#22c55e'; // Green for low
+};
 
 export default function AnalyticsPage() {
   const { t } = useLanguage();
 
   const statCards = [
-    { label: t.analytics.totalSites, value: '—' },
-    { label: t.analytics.activeProjects, value: '—' },
-    { label: t.analytics.dataPoints, value: '—' },
-    { label: t.analytics.lastUpdated, value: '—' },
+    { label: 'Number of Communities', value: '39' },
+    { label: 'Online Modules', value: '12' },
+    { label: 'Working Trucks', value: '8' },
+    { label: 'Last Updated', value: '3 hours' },
   ];
 
   return (
@@ -23,29 +63,45 @@ export default function AnalyticsPage() {
         </p>
       </div>
 
-      {/* Coming Soon Section */}
-      <div className="bg-primary border border-color rounded-lg p-12">
-        <div className="text-center">
-          <svg
-            className="mx-auto h-16 w-16 text-muted mb-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+      {/* Demand Chart Section */}
+      <div className="bg-primary border border-color rounded-lg p-6">
+        <h2 className="text-2xl font-semibold text-primary mb-4">
+          📊 Community Demand Analysis
+        </h2>
+        <p className="text-secondary mb-6">
+          Bar chart showing daily water demand per community, color-coded by urgency: 
+          <span className="text-red-500 font-semibold">Red (High &gt;5000L)</span>, 
+          <span className="text-orange-500 font-semibold">Orange (Medium 2000-5000L)</span>, 
+          <span className="text-green-500 font-semibold">Green (Low &lt;2000L)</span>.
+        </p>
+        <ResponsiveContainer width="100%" height={500}>
+          <BarChart data={DEMAND_CHART_DATA} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis 
+              dataKey="community" 
+              angle={-45} 
+              textAnchor="end" 
+              height={80} 
+              fontSize={12} 
+              stroke="#6b7280" 
             />
-          </svg>
-          <h2 className="text-2xl font-semibold text-primary mb-2">
-            {t.analytics.comingSoon}
-          </h2>
-          <p className="text-secondary max-w-md mx-auto">
-            {t.analytics.comingSoonDescription}
-          </p>
-        </div>
+            <YAxis 
+              label={{ value: 'Demand (Liters)', angle: -90, position: 'insideLeft' }} 
+              fontSize={12} 
+              stroke="#6b7280" 
+            />
+            <Tooltip 
+              formatter={(value) => [`${value} L`, 'Demand']} 
+              labelStyle={{ color: '#374151' }} 
+              contentStyle={{ backgroundColor: '#f9fafb', border: '1px solid #d1d5db' }} 
+            />
+            <Bar dataKey="demand" radius={[4, 4, 0, 0]}>
+              {DEMAND_CHART_DATA.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={getDemandColor(entry.demand)} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Placeholder Stat Cards */}

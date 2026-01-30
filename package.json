@@ -19,7 +19,8 @@
     "next": "16.1.4",
     "pmtiles": "^4.3.2",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@serwist/cli": "^9.5.0",

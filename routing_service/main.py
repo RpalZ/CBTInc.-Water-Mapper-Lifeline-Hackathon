@@ -1,9 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import math
 from typing import List, Optional
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
+import joblib
+import pandas as pd
+import os
 
 # -----------------
 # 1. API Models (Request & Response)
@@ -40,14 +43,41 @@ class SolveResponse(BaseModel):
     status: str
     dropped_node_ids: Optional[List[str]] = None # IDs of locations that could not be visited
 
+class PredictionRequest(BaseModel):
+    """Request body for water demand prediction."""
+    prev_day_l: float
+    pressure_pa: float
+    device_id_count: int
+    day_of_week: int # 0=Monday, 6=Sunday
+
+class PredictionResponse(BaseModel):
+    """Response body for water demand prediction."""
+    predicted_demand_l: float
+
 # -----------------
 # 2. FastAPI App Initialization
 # -----------------
 
 app = FastAPI(
     title="Lifeline Routing Service",
-    description="A microservice to solve Vehicle Routing Problems (VRP) using Google OR-Tools.",
+    description="A microservice to solve Vehicle Routing Problems (VRP) using Google OR-Tools and predict water demand.",
 )
+
+# Load ML Model
+MODEL_PATH = "water_demand_model.pkl"
+FEATURES_PATH = "model_features.pkl"
+model = None
+model_features = None
+
+if os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH):
+    try:
+        model = joblib.load(MODEL_PATH)
+        model_features = joblib.load(FEATURES_PATH)
+        print(f"ML Model loaded successfully from {MODEL_PATH}")
+    except Exception as e:
+        print(f"Error loading ML model: {e}")
+else:
+    print(f"Warning: ML model files not found at {MODEL_PATH} or {FEATURES_PATH}")
 
 # -----------------
 # 3. Core Logic & Helpers
@@ -72,6 +102,35 @@ def haversine_distance(pos1: Location, pos2: Location) -> int:
 # 4. API Endpoint
 # -----------------
 
+@app.post("/predict-demand", response_model=PredictionResponse)
+def predict_demand(request: PredictionRequest):
+    """
+    Predicts water demand based on historical data features.
+    """
+    if model is None or model_features is None:
+        raise HTTPException(status_code=503, detail="ML Model not available")
+
+    try:
+        input_data = {
+            'prev_day_l': [request.prev_day_l],
+            'pressure_pa': [request.pressure_pa],
+            'device_id': [request.device_id_count],
+            'day_of_week': [request.day_of_week]
+        }
+        
+        input_df = pd.DataFrame(input_data)
+        
+        if isinstance(model_features, list):
+             input_df = input_df[model_features]
+
+        prediction = model.predict(input_df)[0]
+        
+        return PredictionResponse(predicted_demand_l=round(float(prediction), 2))
+
+    except Exception as e:
+        print(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/solve-vrp", response_model=SolveResponse)
 def solve_vrp(request: SolveRequest):
     """
@@ -80,18 +139,13 @@ def solve_vrp(request: SolveRequest):
     """
     
     num_locations = len(request.locations)
-    
-    # 0. Basic Validation
     if num_locations < 2:
          return SolveResponse(routes=[], status="NOT_ENOUGH_LOCATIONS")
     
     depot_index = request.depot_index
     num_vehicles = request.num_vehicles
     
-    # --- 1. Create Data Model ---
-    
     # A. Calculate Distance Matrix
-    # We use integer meters for OR-Tools.
     distance_matrix = []
     for i in range(num_locations):
         row = []
@@ -100,72 +154,55 @@ def solve_vrp(request: SolveRequest):
                 row.append(0)
             else:
                 dist = haversine_distance(request.locations[i], request.locations[j])
-                # Apply circuity factor of 1.2 to simulate real road curvature
                 row.append(int(dist * 1.2))
         distance_matrix.append(row)
 
     # B. Define Demands
-    # Use demand from location if provided, else default to 200 units (e.g. Liters).
     demands = [0] * num_locations
     for i in range(num_locations):
-        if i == depot_index:
-            demands[i] = 0
-        else:
-            demands[i] = request.locations[i].demand if request.locations[i].demand is not None else 200
+        demands[i] = request.locations[i].demand if request.locations[i].demand is not None else 200
     
     # C. Define Vehicle Capacities
-    # Use specific capacities if provided and match fleet size, otherwise use global default
     if request.vehicle_capacities and len(request.vehicle_capacities) == num_vehicles:
         vehicle_capacities = request.vehicle_capacities
     else:
         vehicle_capacities = [request.vehicle_capacity] * num_vehicles
 
-    # --- 2. Create Routing Index Manager ---
+    # D. Create Routing Index Manager
     if request.vehicle_depots and len(request.vehicle_depots) == num_vehicles:
-        # Multi-Depot Mode: Each vehicle has its own start/end node
         starts = request.vehicle_depots
         ends = request.vehicle_depots
-        manager = pywrapcp.RoutingIndexManager(
-            num_locations, num_vehicles, starts, ends
-        )
+        manager = pywrapcp.RoutingIndexManager(num_locations, num_vehicles, starts, ends)
     else:
-        # Single Depot Mode: All vehicles start/end at depot_index
-        manager = pywrapcp.RoutingIndexManager(
-            num_locations, num_vehicles, depot_index
-        )
+        manager = pywrapcp.RoutingIndexManager(num_locations, num_vehicles, depot_index)
 
-    # --- 3. Create Routing Model ---
+    # E. Create Routing Model
     routing = pywrapcp.RoutingModel(manager)
 
-    # --- 4. Register Transit Callback (Distance) ---
+    # F. Distance Callback
     def distance_callback(from_index, to_index):
-        # Convert from routing variable Index to distance matrix NodeIndex.
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
         return distance_matrix[from_node][to_node]
 
     transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-    
-    # Define cost of each arc.
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-    # --- 5. Add Distance Constraint (Fuel/Scarcity) ---
+    # G. Distance Dimension
     routing.AddDimension(
         transit_callback_index,
         0,  # no slack
-        request.max_distance_meters,  # vehicle maximum travel distance
+        request.max_distance_meters,
         True,  # start cumul to zero
         "Distance",
     )
 
-    # --- 6. Add Capacity Constraint ---
+    # H. Capacity Dimension
     def demand_callback(from_index):
-        # Convert from routing variable Index to demands NodeIndex.
         from_node = manager.IndexToNode(from_index)
         return demands[from_node]
 
     demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
-    
     routing.AddDimensionWithVehicleCapacity(
         demand_callback_index,
         0,  # null capacity slack
@@ -174,51 +211,47 @@ def solve_vrp(request: SolveRequest):
         "Capacity",
     )
 
-    # --- 7. Add Disjunctions for Optional Visits (Urgency Penalties) ---
-    # Locations marked as optional can be dropped with a penalty.
-    # Locations not marked as optional are mandatory.
+    # I. Disjunctions (Optional Visits)
+    protected_indices = {depot_index}
+    if request.vehicle_depots:
+        protected_indices.update(request.vehicle_depots)
+
     for i, loc in enumerate(request.locations):
-        if i == depot_index:
-            continue # Depot cannot be dropped
+        if i in protected_indices:
+            continue 
 
         if loc.optional_visit:
-            # Use provided penalty or a high default (e.g., 100x max distance)
-            penalty = loc.drop_penalty if loc.drop_penalty is not None else max(distance_matrix[depot_index]) * 100
-            routing.AddDisjunction([manager.NodeToIndex(i)], penalty)
+            # Use high penalty for communities, 0 for unused depots
+            penalty = loc.drop_penalty if loc.drop_penalty is not None else 10000000
+            routing.AddDisjunction([manager.NodeToIndex(i)], int(penalty))
 
-    # --- 8. Configure Search Parameters ---
+    # J. Search Parameters
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    # Use PATH_CHEAPEST_ARC for a good initial solution
     search_parameters.first_solution_strategy = (
-        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
     )
-    # Use GUIDED_LOCAL_SEARCH to refine the solution
     search_parameters.local_search_metaheuristic = (
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
-    search_parameters.time_limit.FromSeconds(2) # Keep it snappy for the MVP
+    search_parameters.time_limit.FromSeconds(5)
 
-    # --- 9. Solve ---
+    # K. Solve
     solution = routing.SolveWithParameters(search_parameters)
 
-    # --- 10. Parse Solution ---
+    # L. Parse Solution
     if not solution:
         return SolveResponse(routes=[], status="NO_SOLUTION_FOUND")
 
     final_routes = []
     dropped_node_ids = []
 
-    # Identify dropped nodes from the solution
-    for node in range(routing.Size()):
-        # Skip depot
-        if routing.IsStart(node) or routing.IsEnd(node):
+    for i in range(num_locations):
+        if i in protected_indices:
             continue
-        # If a node's next stop is itself, it was dropped.
-        if solution.Value(routing.NextVar(node)) == node:
-            location_index = manager.IndexToNode(node)
-            dropped_node_ids.append(request.locations[location_index].id)
+        idx = manager.NodeToIndex(i)
+        if idx != -1 and solution.Value(routing.NextVar(idx)) == idx:
+            dropped_node_ids.append(request.locations[i].id)
     
-    # Create routes for each vehicle
     for vehicle_id in range(num_vehicles):
         index = routing.Start(vehicle_id)
         route_locations = []
@@ -227,18 +260,12 @@ def solve_vrp(request: SolveRequest):
         while not routing.IsEnd(index):
             node_index = manager.IndexToNode(index)
             route_locations.append(request.locations[node_index])
-            
             previous_index = index
             index = solution.Value(routing.NextVar(index))
-            route_distance += routing.GetArcCostForVehicle(
-                previous_index, index, vehicle_id
-            )
+            route_distance += routing.GetArcCostForVehicle(previous_index, index, vehicle_id)
             
-        # Add the end node (depot)
-        node_index = manager.IndexToNode(index)
-        route_locations.append(request.locations[node_index])
+        route_locations.append(request.locations[manager.IndexToNode(index)])
         
-        # Only include routes that actually visit customers
         if len(route_locations) > 2:
              final_routes.append(Route(
                 vehicle_id=vehicle_id,
@@ -246,5 +273,5 @@ def solve_vrp(request: SolveRequest):
                 total_distance_meters=route_distance
             ))
 
-    status = "OPTIMAL" if not dropped_node_ids else "SOLUTION_WITH_DROPPED_NODES"
+    status = f"SOLVED (Routes: {len(final_routes)}, Dropped: {len(dropped_node_ids)})"
     return SolveResponse(routes=final_routes, status=status, dropped_node_ids=dropped_node_ids)
