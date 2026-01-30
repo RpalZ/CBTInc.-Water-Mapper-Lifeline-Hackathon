@@ -135,13 +135,18 @@ export default function LifelineMap() {
     totalDemand: number;
     topDemands: { label: string; demand: number }[];
   } | null>(null);
+  
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const fetchData = useCallback(async () => {
+    setIsUpdating(true);
     const { data: locations, error: locError } = await supabase.from('location').select('*');
     if (locError) {
       console.error('Error fetching locations:', locError);
     } else if (locations) {
       setDbLocations(locations as DBLocation[]);
+      setLastUpdated(new Date());
     }
 
     const { data: vehicles, error: vehError } = await supabase.from('vehicle').select('*');
@@ -150,6 +155,9 @@ export default function LifelineMap() {
     } else if (vehicles) {
       setDbVehicles(vehicles as DBVehicle[]);
     }
+    
+    // Reset the "updating" flash after 2 seconds
+    setTimeout(() => setIsUpdating(false), 2000);
   }, []);
 
   // Fetch data and user on mount
@@ -158,6 +166,45 @@ export default function LifelineMap() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setUserId(user.id);
     });
+
+    // Realtime subscription for location updates
+    const channel = supabase
+      .channel('realtime-location-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'location',
+        },
+        (payload) => {
+          console.log('[LifelineMap] Realtime update received:', payload);
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
+
+  // Listen for the custom "cron job finished" event from DemoCronPoller
+  useEffect(() => {
+    console.log('[LifelineMap] Event listener attached for: water-mapper:data-updated');
+    
+    const handleManualUpdate = () => {
+        console.log('[LifelineMap] ⚡ Event received: water-mapper:data-updated. Refreshing data...');
+        fetchData();
+        // Do NOT call handleGenerateRoutes here. 
+        // fetchData will update dbLocations, which triggers the other useEffect.
+    };
+
+    window.addEventListener('water-mapper:data-updated', handleManualUpdate);
+    return () => {
+        console.log('[LifelineMap] Event listener removed');
+        window.removeEventListener('water-mapper:data-updated', handleManualUpdate);
+    };
   }, [fetchData]);
 
   // Update map filters
@@ -572,6 +619,15 @@ export default function LifelineMap() {
     setAvailableVehicles([]);
   };
 
+  // Auto-route when data updates
+  useEffect(() => {
+    if (dbLocations.length > 0 && mapLoaded) {
+      console.log(`[LifelineMap] Data updated (${dbLocations.length} locations). Triggering re-route...`);
+      handleGenerateRoutes(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbLocations, mapLoaded]);
+
   useEffect(() => {
     if (!mapContainer.current) return;
     if (mapInstance.current) return;
@@ -680,6 +736,9 @@ export default function LifelineMap() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-center">
+              <button onClick={() => { console.log('[LifelineMap] Manually dispatching test event'); window.dispatchEvent(new CustomEvent('water-mapper:data-updated')); }} className="px-3 py-1.5 rounded-lg font-medium text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 flex items-center gap-1.5 transition-all">
+                  ⚡ Test Update
+              </button>
               <button onClick={() => setIsAddingLocation(!isAddingLocation)} className={`px-3 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 transition-all ${isAddingLocation ? 'bg-amber-500 text-white shadow-inner' : 'bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700'}`}>
                   {isAddingLocation ? '📍 Pick on Map' : '➕ Location'}
               </button>
@@ -697,6 +756,13 @@ export default function LifelineMap() {
               )}
               
               {routesLoaded && <button onClick={clearCache} className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded border border-red-200">Reset</button>}
+              
+              {lastUpdated && (
+                <div className={`hidden lg:flex flex-col items-end text-[10px] transition-colors duration-500 ${isUpdating ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>
+                    <span>{isUpdating ? '⚡ Receiving Data...' : 'Live Updates On'}</span>
+                    <span className="font-mono">{lastUpdated.toLocaleTimeString()}</span>
+                </div>
+              )}
           </div>
       </div>
 

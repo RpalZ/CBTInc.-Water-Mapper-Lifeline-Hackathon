@@ -19,8 +19,11 @@ export async function POST(req: NextRequest) {
         // 1. Generate Raw Data
         const rawData = generateRawTelemetry(500); // Generate 500 points for better clustering
         
+      
         // 2. Assign Locations
         const locationData = assignLocationsToBatch(rawData as TelemetryWithLocation[]);
+
+        console.log(locationData)
 
         // 3. In-Memory Clustering (Centroid Logic)
         // Filter active points (pressure > 2000 delta, stationary) - similar to process-csv
@@ -74,7 +77,8 @@ export async function POST(req: NextRequest) {
             try {
                 // Assuming routing_service is running locally on port 8000
                 // In production, use env var for URL
-                const response = await fetch("http://127.0.0.1:8000/predict-demand", {
+                const port = 5000
+                const response = await fetch(`http://127.0.0.1:${port}/predict-demand`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(mlPayload)
