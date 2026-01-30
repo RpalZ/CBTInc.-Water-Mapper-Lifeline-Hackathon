@@ -58,10 +58,9 @@ export async function GET(_req: NextRequest) {
         // Using existing pressure_delta column. Threshold 2000 Pa.
         // Also ensure valid lat/lon and low speed (stationary).
         const activeRecords = records.filter(r => 
-            r.pressure_delta > 2000 && 
             !isNaN(r.lat) && 
             !isNaN(r.lon) &&
-            (!r.speed_mps || r.speed_mps < 1.5)
+             (r.speed_mps || 0) < 1.5
         );
 
         if (activeRecords.length === 0) {

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { usePowerSync, useQuery } from '@powersync/react';
+import { supabase } from '@/lib/supabase/client';
 import { initMapLibre } from '@/lib/map/initMap';
 import { initRouteLayer, updateRoute } from '@/lib/map/routeLayer';
 import { fetchRoute } from '@/lib/routing/osrm';
@@ -17,7 +17,7 @@ const ROUTE_CACHE_KEY = 'water_mapper_routes_cache_v1';
 
 // --- Constants ---
 
-const DEPOTS = [
+const FIXED_DEPOTS = [
   { id: "depot_khartoum", lat: 15.5007, lon: 32.5599, label: "Khartoum Depot" },
   { id: "depot_port_sudan", lat: 19.6175, lon: 37.2164, label: "Port Sudan Depot" },
   { id: "depot_el_obeid", lat: 13.1833, lon: 30.2167, label: "El Obeid Depot" },
@@ -27,20 +27,12 @@ const DEPOTS = [
   { id: "depot_wad_madani", lat: 14.4012, lon: 33.5199, label: "Wad Madani Depot" },
   { id: "depot_al_fashir", lat: 13.6333, lon: 25.3500, label: "Al Fashir Depot" },
   { id: "depot_sennar", lat: 13.5500, lon: 33.5667, label: "Sennar Depot" },
-  { id: "depot_atbara", lat: 17.8333, lon: 33.9667, label: "Atbara Depot" }
-];
-
-const COMMUNITY_COORDS = [
-  [15.6000, 32.5000], [15.4000, 32.6000], [15.7000, 32.4000],
-  [19.5000, 37.1000], [19.7000, 37.3000], [19.4000, 37.0000],
-  [13.1000, 30.1000], [13.3000, 30.3000], [13.0000, 30.4000],
-  [12.1000, 24.9000], [11.9000, 24.8000], [12.2000, 25.0000],
-  [15.3500, 36.3000], [15.5500, 36.5000], [15.2500, 36.2000],
-  [19.1000, 30.4000], [19.2500, 30.5500], [19.0000, 30.3500],
-  [14.3000, 33.4000], [14.5000, 33.6000], [14.2000, 33.7000],
-  [13.5000, 25.2000], [13.7000, 25.4000], [13.8000, 25.5000],
-  [13.4500, 33.4500], [13.6500, 33.6500], [13.3500, 33.7500],
-  [17.7000, 33.8000], [17.9000, 34.0000], [17.6000, 34.1000]
+  { id: "depot_atbara", lat: 17.8333, lon: 33.9667, label: "Atbara Depot" },
+  { id: "depot_damazin", lat: 11.7667, lon: 34.3500, label: "Damazin Depot" },
+  { id: "depot_kosti", lat: 13.1667, lon: 32.6667, label: "Kosti Depot" },
+  { id: "depot_gedaref", lat: 14.0333, lon: 35.3833, label: "Gedaref Depot" },
+  { id: "depot_kadugli", lat: 11.0000, lon: 29.7167, label: "Kadugli Depot" },
+  { id: "depot_geneina", lat: 13.4500, lon: 22.4333, label: "Geneina Depot" }
 ];
 
 // Types
@@ -90,6 +82,15 @@ interface DBVehicle {
   assigned_location_id?: string;
 }
 
+interface SolverLocation {
+  id: string;
+  lat: number;
+  lon: number;
+  demand: number;
+  optional_visit?: boolean;
+  drop_penalty?: number;
+}
+
 interface SearchResult extends Partial<DBLocation> {
   source: 'db' | 'mock';
   lat?: number;
@@ -102,9 +103,9 @@ export default function LifelineMap() {
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   
-  const powersync = usePowerSync();
-  const { data: dbLocations } = useQuery('SELECT * FROM location');
-  const { data: dbVehicles } = useQuery('SELECT * FROM vehicle');
+  const [dbLocations, setDbLocations] = useState<DBLocation[]>([]);
+  const [dbVehicles, setDbVehicles] = useState<DBVehicle[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
 
   // Interaction State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -134,13 +135,37 @@ export default function LifelineMap() {
     topDemands: { label: string; demand: number }[];
   } | null>(null);
 
+  const fetchData = useCallback(async () => {
+    const { data: locations, error: locError } = await supabase.from('location').select('*');
+    if (locError) {
+      console.error('Error fetching locations:', locError);
+    } else if (locations) {
+      setDbLocations(locations as DBLocation[]);
+    }
+
+    const { data: vehicles, error: vehError } = await supabase.from('vehicle').select('*');
+    if (vehError) {
+      console.error('Error fetching vehicles:', vehError);
+    } else if (vehicles) {
+      setDbVehicles(vehicles as DBVehicle[]);
+    }
+  }, []);
+
+  // Fetch data and user on mount
+  useEffect(() => {
+    fetchData();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setUserId(user.id);
+    });
+  }, [fetchData]);
+
   // Update map filters
   useEffect(() => {
     if (!mapInstance.current || !mapLoaded) return;
     const map = mapInstance.current;
     if (!map.isStyleLoaded()) return;
 
-    const filter = ['in', ['get', 'vehicle_id'], ['literal', visibleVehicles]];
+    const filter: maplibregl.FilterSpecification = ['in', ['get', 'vehicle_id'], ['literal', visibleVehicles]];
     if (map.getLayer('route-line')) map.setFilter('route-line', filter);
   }, [visibleVehicles, mapLoaded]);
 
@@ -153,17 +178,17 @@ export default function LifelineMap() {
     
     const results: SearchResult[] = [];
     if (dbLocations) {
-      const matches = (dbLocations as DBLocation[]).filter(l => 
+      const matches = dbLocations.filter(l => 
         l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
         l.label?.toLowerCase().includes(searchQuery.toLowerCase())
       );
       results.push(...matches.map(l => ({ ...l, source: 'db' as const })));
     }
 
-    const mockDepots = DEPOTS.filter(d => 
+    const depotMatches = FIXED_DEPOTS.filter(d => 
       d.label.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    results.push(...mockDepots.map(d => ({ ...d, name: d.label, source: 'mock' as const, latitude: d.lat, longitude: d.lon })));
+    results.push(...depotMatches.map(d => ({ ...d, name: d.label, source: 'mock' as const, latitude: d.lat, longitude: d.lon })));
 
     setSearchResults(results.slice(0, 5));
   }, [searchQuery, dbLocations]);
@@ -172,14 +197,21 @@ export default function LifelineMap() {
     if (!newLocationCoords) return;
     try {
       const { lat, lng } = newLocationCoords;
-      await powersync.execute(
-        `INSERT INTO location (id, name, label, latitude, longitude, water_demand_daily, owner) 
-         VALUES (uuid(), ?, ?, ?, ?, ?, ?)`,
-        [data.name, data.type, lat, lng, data.demand, 'user-id-placeholder']
-      );
+      const { error } = await supabase.from('location').insert({
+        name: data.name,
+        label: data.type,
+        latitude: lat,
+        longitude: lng,
+        water_demand_daily: data.demand,
+        owner: userId // Might be null if not logged in
+      });
+      
+      if (error) throw error;
+      
       setShowLocationModal(false);
       setIsAddingLocation(false);
       setNewLocationCoords(null);
+      fetchData();
     } catch (error) {
       console.error("Failed to create location:", error);
       alert("Failed to save location.");
@@ -188,12 +220,18 @@ export default function LifelineMap() {
 
   const handleCreateVehicle = async (data: { name: string; type: 'truck' | 'car'; capacity: number; locationId?: string }) => {
     try {
-      await powersync.execute(
-        `INSERT INTO vehicle (id, name, type, capacity, assigned_location_id, owner) 
-         VALUES (uuid(), ?, ?, ?, ?, ?)`,
-        [data.name, data.type, data.capacity, data.locationId || null, 'user-id-placeholder']
-      );
+      const { error } = await supabase.from('vehicle').insert({
+        name: data.name,
+        type: data.type,
+        capacity: data.capacity,
+        assigned_location_id: data.locationId || null,
+        owner: userId
+      });
+
+      if (error) throw error;
+
       setShowVehicleModal(false);
+      fetchData();
     } catch (error) {
       console.error("Failed to create vehicle:", error);
       alert("Failed to save vehicle.");
@@ -202,11 +240,15 @@ export default function LifelineMap() {
 
   const handleCreateDevice = async (data: { name: string; vehicleId?: string }) => {
     try {
-      await powersync.execute(
-        `INSERT INTO device (id, name, vehicle_id, owner, available) 
-         VALUES (uuid(), ?, ?, ?, 1)`,
-        [data.name, data.vehicleId || null, 'user-id-placeholder']
-      );
+      const { error } = await supabase.from('device').insert({
+        name: data.name,
+        vehicle_id: data.vehicleId || null,
+        owner: userId,
+        available: 1
+      });
+
+      if (error) throw error;
+
       setShowDeviceModal(false);
     } catch (error) {
       console.error("Failed to create device:", error);
@@ -223,7 +265,8 @@ export default function LifelineMap() {
     if (!mapInstance.current || !mapLoaded) return;
     const features: GeoJSON.Feature[] = [];
 
-    DEPOTS.forEach(depot => {
+    // Add Fixed Depots
+    FIXED_DEPOTS.forEach(depot => {
       features.push({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [depot.lon, depot.lat] },
@@ -231,16 +274,8 @@ export default function LifelineMap() {
       });
     });
 
-    COMMUNITY_COORDS.forEach((coords, i) => {
-      features.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [coords[1], coords[0]] },
-        properties: { vehicle_id: -1, type: 'end', id: `community_${i}`, label: `Community ${i}`, demand: 0, color: '#ef4444' }
-      });
-    });
-
     if (dbLocations && dbLocations.length > 0) {
-        (dbLocations as DBLocation[]).forEach(loc => {
+        dbLocations.forEach(loc => {
             const isDepot = loc.label === 'depot';
             features.push({
                 type: 'Feature',
@@ -296,70 +331,130 @@ export default function LifelineMap() {
         return;
       }
       
-      // 1. Prepare all locations (Hardcoded + DB)
-      const locations = [
-        ...DEPOTS.map(d => ({ id: d.id, lat: d.lat, lon: d.lon, demand: 0, optional_visit: false })),
-        ...COMMUNITY_COORDS.map((coords, i) => ({ id: `community_${i}`, lat: coords[0], lon: coords[1], demand: Math.floor(Math.random() * 2000) + 800, optional_visit: true, drop_penalty: 1000000 }))
-      ];
+      // 1. Consolidate all locations from Fixed Constants + DB
+      interface RawLocation {
+        id: string;
+        lat: number;
+        lon: number;
+        label: string;
+        demand: number;
+      }
+      const allRawLocations: RawLocation[] = [];
 
-      // Add user-created locations from DB
-      if (dbLocations) {
-        (dbLocations as DBLocation[]).forEach(loc => {
-           // Avoid duplicates if IDs clash
-           if (!locations.find(l => l.id === loc.id)) {
-               locations.push({
-                   id: loc.id,
-                   lat: loc.latitude,
-                   lon: loc.longitude,
-                   demand: loc.label === 'depot' ? 0 : (loc.water_demand_daily || 500),
-                   optional_visit: loc.label === 'community',
-                   drop_penalty: loc.label === 'community' ? 1000000 : undefined
-               });
-           }
+      // Add Fixed Depots (Standardized)
+      FIXED_DEPOTS.forEach(d => {
+        allRawLocations.push({
+          id: d.id,
+          lat: d.lat,
+          lon: d.lon,
+          label: 'depot',
+          demand: 0
+        });
+      });
+
+      console.log('DB Locations raw:', dbLocations);
+
+      // Add DB Locations (Standardized)
+      if (dbLocations && Array.isArray(dbLocations)) {
+        dbLocations.forEach(l => {
+          // Avoid duplicates if IDs clash
+          if (!allRawLocations.find(existing => existing.id === l.id)) {
+            // Validate coordinates
+            if (typeof l.latitude === "number" && typeof l.longitude === 'number') {
+              allRawLocations.push({
+                id: l.id,
+                lat: l.latitude,
+                lon: l.longitude,
+                label: l.label, // 'depot' or 'community'
+                demand: Math.round(Number(l.water_demand_daily) || 0)
+              });
+            }
+          }
         });
       }
 
-      // 2. Configure Fleet (Simulation + DB Combined)
+      console.log('All Consolidated Locations:', allRawLocations.length, allRawLocations);
+
+      // 2. Sort: Depots FIRST, then Communities
+      // This is crucial for the VRP solver which typically expects depots at the start of the index
+      const depots = allRawLocations.filter(l => l.label === 'depot');
+      const communities = allRawLocations.filter(l => l.label === 'community');
+
+      console.log('Depots:', depots.length);
+      console.log('Communities:', communities.length);
+
+      // 2. Configure Fleet (Mock Data)
+      const num_mock_vehicles = 20;
+      const mockFleetCapacities = Array.from({ length: num_mock_vehicles }, (_, i) => [5000, 3000, 1000][i % 3]);
+      const maxCapacity = Math.max(...mockFleetCapacities);
       
-      // A. Simulation Fleet (Mock)
-      const mockFleetSize = 20;
-      const mockCapacities = Array.from({ length: mockFleetSize }, (_, i) => {
-          // Vary capacities: Heavy (5000L), Medium (3000L), Light (1000L)
-          if (i % 3 === 0) return 5000;
-          if (i % 3 === 1) return 3000;
-          return 1000;
-      });
-      // Distribute mock vehicles across hardcoded depots
-      const mockDepots = Array.from({ length: mockFleetSize }, (_, i) => i % DEPOTS.length);
+      // Distribute vehicles among available depots (first N nodes in 'locations' are depots)
+      const num_available_depots = depots.length;
+      const mockFleetDepots = Array.from({ length: num_mock_vehicles }, (_, i) => i % num_available_depots);
 
-      // B. DB Fleet (User)
-      let dbFleetCapacities: number[] = [];
-      let dbFleetDepots: number[] = [];
+      const dbFleetCapacities = mockFleetCapacities;
+      const dbFleetDepots = mockFleetDepots;
 
-      if (dbVehicles && dbVehicles.length > 0) {
-          const vehicles = dbVehicles as DBVehicle[];
-          dbFleetCapacities = vehicles.map(v => v.capacity || 2000);
-          
-          dbFleetDepots = vehicles.map(v => {
-              if (v.assigned_location_id) {
-                  const idx = locations.findIndex(l => l.id === v.assigned_location_id);
-                  return idx !== -1 ? idx : 0; 
-              }
-              return 0; // Default to first depot
+      const num_vehicles = dbFleetCapacities.length;
+
+      // 3. Construct Solver Request Payload with Node Splitting (Fragmentation)
+      const locations: SolverLocation[] = [
+        // Depots: Demand 0, Optional with 0 penalty (so they are skipped unless used as start/end)
+        ...depots.map(d => ({
+          id: d.id,
+          lat: d.lat,
+          lon: d.lon,
+          demand: 0,
+          optional_visit: true,
+          drop_penalty: 0
+        }))
+      ];
+
+      // Split communities if demand > maxCapacity
+      communities.forEach(c => {
+        const demand = Math.round(Number(c.demand) || 500);
+        if (demand > maxCapacity) {
+          let remaining = demand;
+          let part = 1;
+          while (remaining > 0) {
+            const currentPartDemand = Math.min(remaining, maxCapacity);
+            locations.push({
+              id: `${c.id}_part${part}`,
+              lat: c.lat,
+              lon: c.lon,
+              demand: currentPartDemand,
+              optional_visit: true,
+              drop_penalty: 5000000
+            });
+            remaining -= currentPartDemand;
+            part++;
+          }
+        } else {
+          locations.push({
+            id: c.id,
+            lat: c.lat,
+            lon: c.lon,
+            demand: demand,
+            optional_visit: true,
+            drop_penalty: 5000000
           });
+        }
+      });
+
+      console.log('Final Solver Payload Locations (with fragments):', locations.length, locations);
+
+      if (locations.length === 0) {
+        throw new Error("No locations available to route.");
       }
 
-      // C. Combine Fleets
-      const vehicle_capacities = [...mockCapacities, ...dbFleetCapacities];
-      const vehicle_depots = [...mockDepots, ...dbFleetDepots];
-      const num_vehicles = vehicle_capacities.length;
+      console.log({locations})
 
       const routingRequest = {
         locations: locations,
         num_vehicles: num_vehicles,
         depot_index: 0,
-        vehicle_depots: vehicle_depots,
-        vehicle_capacities: vehicle_capacities,
+        vehicle_depots: dbFleetDepots,
+        vehicle_capacities: dbFleetCapacities,
         max_distance_meters: 3000000
       };
 
@@ -378,10 +473,11 @@ export default function LifelineMap() {
 
       // Add Start Points (Depots) for visual context
       locations.filter(l => l.demand === 0).forEach(depot => {
-          // Try to find label from DEPOTS or DB
-          const hardcoded = DEPOTS.find(d => d.id === depot.id);
-          const dbLoc = dbLocations ? (dbLocations as DBLocation[]).find(l => l.id === depot.id) : null;
-          const label = hardcoded ? hardcoded.label : (dbLoc ? dbLoc.name : 'Depot');
+          // Check Fixed Depots first
+          const fixed = FIXED_DEPOTS.find(d => d.id === depot.id);
+          // Only search dbLocations if it's not a fixed depot
+          const dbLoc = dbLocations.find(l => l.id === depot.id);
+          const label = fixed ? fixed.label : (dbLoc ? dbLoc.name : 'Depot');
           
           allFeatures.push({ 
               type: 'Feature', 
@@ -407,19 +503,15 @@ export default function LifelineMap() {
         }
         
         routeLocs.forEach((loc, index) => {
-           let label = loc.id;
-           // Determine label based on source
-           if (loc.id.startsWith('depot_')) {
-               label = `${loc.id.replace('depot_', '').charAt(0).toUpperCase()}${loc.id.replace('depot_', '').slice(1)} Depot`;
-           } else if (loc.id.startsWith('community_')) {
-               label = `Community ${loc.id.split('_')[1]}`;
-           } else {
-               // Must be DB location
-               const dbLoc = dbLocations ? (dbLocations as DBLocation[]).find(l => l.id === loc.id) : null;
-               if (dbLoc) label = dbLoc.name;
-           }
+           const baseId = loc.id.split('_part')[0];
+           let label = baseId;
+           const fixed = FIXED_DEPOTS.find(d => d.id === baseId);
+           const dbLoc = dbLocations.find(l => l.id === baseId);
+           
+           if (fixed) label = fixed.label;
+           else if (dbLoc) label = dbLoc.name;
 
-           const isStart = index === 0 || index === routeLocs.length - 1; // Assuming round trip or depot start/end
+           const isStart = index === 0 || index === routeLocs.length - 1; 
            allFeatures.push({ 
                type: 'Feature', 
                geometry: { type: 'Point', coordinates: [loc.lon, loc.lat] }, 
@@ -541,8 +633,8 @@ export default function LifelineMap() {
     <div className="flex flex-col h-full w-full gap-4 relative">
       
       <CreateLocationModal isOpen={showLocationModal} onClose={() => { setShowLocationModal(false); setIsAddingLocation(false); }} onSave={handleCreateLocation} coordinates={newLocationCoords} />
-      <CreateVehicleModal isOpen={showVehicleModal} onClose={() => setShowVehicleModal(false)} onSave={handleCreateVehicle} locations={(dbLocations || []) as DBLocation[]} />
-      <CreateDeviceModal isOpen={showDeviceModal} onClose={() => setShowDeviceModal(false)} onSave={handleCreateDevice} vehicles={(dbVehicles || []) as DBVehicle[]} />
+      <CreateVehicleModal isOpen={showVehicleModal} onClose={() => setShowVehicleModal(false)} onSave={handleCreateVehicle} locations={dbLocations} />
+      <CreateDeviceModal isOpen={showDeviceModal} onClose={() => setShowDeviceModal(false)} onSave={handleCreateDevice} vehicles={dbVehicles} />
 
       {/* Top Bar */}
       <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-zinc-900 p-4 rounded-lg border border-gray-200 dark:border-zinc-800 shadow-sm gap-4 z-10">

@@ -2,3 +2,7 @@ fastapi
 uvicorn[standard]
 ortools
 pydantic
+pandas
+scikit-learn
+joblib
+numpy
