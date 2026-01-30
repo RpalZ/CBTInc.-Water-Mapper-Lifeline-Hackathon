@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   // Use the user's JWT to interact with Supabase (RLS will apply)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_SECRET_KEY!,
     {
       global: {
         headers: { Authorization: authHeader },
