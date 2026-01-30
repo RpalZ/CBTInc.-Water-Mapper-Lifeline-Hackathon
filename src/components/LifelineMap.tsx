@@ -36,45 +36,6 @@ const FIXED_DEPOTS = [
   { id: "depot_geneina", lat: 13.4500, lon: 22.4333, label: "Geneina Depot" }
 ];
 
-// Add this near the top, after other constants
-const DEMAND_CHART_DATA = [
-  { community: 'Khartoum North', demand: 7500 },
-  { community: 'Port Sudan East', demand: 9200 },
-  { community: 'El Obeid Central', demand: 4800 },
-  { community: 'Nyala West', demand: 6100 },
-  { community: 'Kassala South', demand: 8300 },
-  { community: 'Dongola Village', demand: 2900 },
-  { community: 'Wad Madani Hub', demand: 5400 },
-  { community: 'Al Fashir Outskirts', demand: 9700 },
-  { community: 'Sennar District', demand: 1200 },
-  { community: 'Atbara Riverside', demand: 6800 },
-  { community: 'Damazin Plains', demand: 4100 },
-  { community: 'Kosti Lakeside', demand: 8500 },
-  { community: 'Gedaref Farms', demand: 3300 },
-  { community: 'Kadugli Hills', demand: 7600 },
-  { community: 'Geneina Oasis', demand: 1900 },
-  { community: 'Khartoum South', demand: 5700 },
-  { community: 'Port Sudan West', demand: 8800 },
-  { community: 'El Obeid Suburbs', demand: 2500 },
-  { community: 'Nyala Central', demand: 7200 },
-  { community: 'Kassala Markets', demand: 4600 },
-  { community: 'Dongola Desert', demand: 9300 },
-  { community: 'Wad Madani Fields', demand: 1400 },
-  { community: 'Al Fashir Nomads', demand: 6500 },
-  { community: 'Sennar Rivers', demand: 3800 },
-  { community: 'Atbara Mines', demand: 7900 },
-  { community: 'Damazin Forests', demand: 2100 },
-  { community: 'Kosti Docks', demand: 5600 },
-  { community: 'Gedaref Borders', demand: 8400 },
-];
-
-// Helper function for color coding
-const getDemandColor = (demand: number) => {
-  if (demand > 5000) return '#ef4444'; // Red for urgent
-  if (demand > 2000) return '#f97316'; // Orange for medium
-  return '#22c55e'; // Green for low
-};
-
 // Types
 interface RouteLocation {
   id: string;
@@ -174,9 +135,6 @@ export default function LifelineMap() {
     totalDemand: number;
     topDemands: { label: string; demand: number }[];
   } | null>(null);
-
-  // Add this new state for toggling the chart
-  const [showDemandChart, setShowDemandChart] = useState(false);
 
   const fetchData = useCallback(async () => {
     const { data: locations, error: locError } = await supabase.from('location').select('*');
@@ -739,14 +697,6 @@ export default function LifelineMap() {
               )}
               
               {routesLoaded && <button onClick={clearCache} className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded border border-red-200">Reset</button>}
-
-              {/* Add this toggle button */}
-              <button 
-                onClick={() => setShowDemandChart(!showDemandChart)} 
-                className="px-3 py-1.5 rounded-lg font-medium text-xs bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700 flex items-center gap-1.5 transition-all"
-              >
-                {showDemandChart ? '←' : '→'} Demand Chart
-              </button>
           </div>
       </div>
 
@@ -806,54 +756,6 @@ export default function LifelineMap() {
           </div>
         )}
         <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
-
-        {showDemandChart && (
-          <div className="absolute inset-0 bg-white dark:bg-zinc-900 p-6 z-20">
-            <button 
-              onClick={() => setShowDemandChart(false)} 
-              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center bg-gray-200 dark:bg-zinc-700 hover:bg-gray-300 dark:hover:bg-zinc-600 rounded-full text-gray-700 dark:text-gray-300 transition-colors"
-            >
-              ✕
-            </button>
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
-              📊 Community Demand Analysis
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Bar chart showing daily water demand per community, color-coded by urgency: 
-              <span className="text-red-500 font-semibold">Red (High {'>'}5000L)</span>, 
-              <span className="text-orange-500 font-semibold">Orange (Medium 2000-5000L)</span>, 
-              <span className="text-green-500 font-semibold">Green (Low {'<'}2000L)</span>.
-            </p>
-            <ResponsiveContainer width="100%" height={500}>
-              <BarChart data={DEMAND_CHART_DATA} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis 
-                  dataKey="community" 
-                  angle={-45} 
-                  textAnchor="end" 
-                  height={80} 
-                  fontSize={12} 
-                  stroke="#6b7280" 
-                />
-                <YAxis 
-                  label={{ value: 'Demand (Liters)', angle: -90, position: 'insideLeft' }} 
-                  fontSize={12} 
-                  stroke="#6b7280" 
-                />
-                <Tooltip 
-                  formatter={(value) => [`${value} L`, 'Demand']} 
-                  labelStyle={{ color: '#374151' }} 
-                  contentStyle={{ backgroundColor: '#f9fafb', border: '1px solid #d1d5db' }} 
-                />
-                <Bar dataKey="demand" radius={[4, 4, 0, 0]}>
-                  {DEMAND_CHART_DATA.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={getDemandColor(entry.demand)} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
       </div>
     </div>
   );
