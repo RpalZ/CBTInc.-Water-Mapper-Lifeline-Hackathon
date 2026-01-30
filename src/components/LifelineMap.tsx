@@ -101,6 +101,7 @@ interface SearchResult extends Partial<DBLocation> {
 export default function LifelineMap() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<maplibregl.Map | null>(null);
+  const mounted = useRef(false); // Add this ref
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   
@@ -632,6 +633,8 @@ export default function LifelineMap() {
     if (!mapContainer.current) return;
     if (mapInstance.current) return;
 
+    mounted.current = true; // Set mounted to true when component mounts
+
     try {
       mapInstance.current = new maplibregl.Map({
         container: mapContainer.current,
@@ -652,16 +655,17 @@ export default function LifelineMap() {
       map.addControl(new maplibregl.NavigationControl(), 'top-right');
       
       map.once('load', () => {
+        if (!mounted.current) return; // Check if component is still mounted
         initRouteLayer(map);
         setMapLoaded(true);
         
         map.on('mouseenter', 'route-line', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'route-line', () => { map.getCanvas().style.cursor = ''; });
         map.on('mouseenter', 'route-end', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'route-end', () => { map.getCanvas().style.cursor = ''; setHoverInfo(null); });
+        map.on('mouseleave', 'route-end', () => { map.getCanvas().style.cursor = ''; if (mounted.current) setHoverInfo(null); }); // Check here too
 
         map.on('mousemove', 'route-end', (e) => {
-            if (e.features && e.features.length > 0) {
+            if (mounted.current && e.features && e.features.length > 0) { // Check here too
                 const feature = e.features[0];
                 const props = feature.properties as unknown as HoverFeatureProperties;
                 setHoverInfo({ x: e.point.x, y: e.point.y, feature: props });
@@ -670,10 +674,11 @@ export default function LifelineMap() {
       });
 
     } catch (err: unknown) {
-        setMapError((err as Error).message);
+        if (mounted.current) setMapError((err as Error).message); // Check here too
     }
 
     return () => {
+      mounted.current = false; // Set mounted to false when component unmounts
       mapInstance.current?.remove();
       mapInstance.current = null;
     };

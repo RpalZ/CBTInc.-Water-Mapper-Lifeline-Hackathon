@@ -1,5 +1,7 @@
 # 💧 WaterMapper Lifeline: Autonomous Crisis Logistics
 
+In places of crisis, **water** is primarily **distributed** through **manual containers** such as jerry cans and tanker trucks **without real-time data** on volume delivered, routes taken, or community demand, leading to **wasted resources**, overserved areas, and entire **communities** being **missed**. 
+
 **WaterMapper Lifeline** is an offline-first, AI-powered logistics platform designed to optimize water distribution in crisis zones like Sudan. It combines real-time sensor data, predictive demand modeling, and advanced vehicle routing to ensure critical resources reach the communities that need them most—even without internet connectivity.
 
 ![Project Status](https://img.shields.io/badge/Status-Active_Development-green)
@@ -15,20 +17,20 @@ Built for unreliable networks. The entire application runs directly on the user'
 - **Serwist:** Service worker management ensures the app loads instantly, offline.
 - **MapLibre:** Vector maps are rendered client-side using cached PMTiles, allowing navigation without a live map server.
 
-### 2. 🚛 Advanced Fleet Optimization (OR-Tools)
+### 2. 📊 Data-Driven Demand (ML Ready)
+- **Sensor Integration:** Designed to ingest telemetry from IoT water tank sensors (`pressure_pa`, `timestamp`,`location`, etc), whcich is used to find other variables such as last 24 hour demand in specific locations.
+- **Demand Prediction:** Uses historical usage patterns to forecast liters required per community in the next 24 hours, replacing reactive "emergency calls" with proactive delivery schedules.
+
+### 3. 🗺️ Hybrid Routing Visualization
+- **Backend Planner:** Google OR-Tools calculates the optimal *sequence* of stops using the demand predicted by the machine learning model.
+- **Frontend Visualizer:** The React app fetches real-world road geometries from OSRM (Open Source Routing Machine) to display turn-by-turn paths on the map.
+- **Interactive Dashboard:** Operators can filter vehicles, view demand scoreboards, and identify critical shortages instantly.
+
+### 4. 🚛 Advanced Fleet Optimization (OR-Tools)
 A dedicated Python microservice that solves the **Multi-Depot Capacitated Vehicle Routing Problem (MDVRP)**.
 - **Constraint Programming:** Considers vehicle capacity (Liters), maximum fuel range (km), and community demand urgency.
 - **Multi-Depot:** Optimizes fleets operating simultaneously from Khartoum, Port Sudan, El Obeid, and Nyala.
 - **Resilience:** Uses soft constraints to "do the best possible" rather than failing if resources are tight (no "No Solution" errors).
-
-### 3. 🗺️ Hybrid Routing Visualization
-- **Backend Planner:** Google OR-Tools calculates the optimal *sequence* of stops.
-- **Frontend Visualizer:** The React app fetches real-world road geometries from OSRM (Open Source Routing Machine) to display turn-by-turn paths on the map.
-- **Interactive Dashboard:** Operators can filter vehicles, view demand scoreboards, and identify critical shortages instantly.
-
-### 4. 📊 Data-Driven Demand (ML Ready)
-- **Sensor Integration:** Designed to ingest telemetry from IoT water tank sensors (`pressure_pa`, `battery_voltage`).
-- **Demand Prediction:** Uses historical usage patterns to forecast liters required per community, replacing reactive "emergency calls" with proactive delivery schedules.
 
 ---
 
@@ -53,6 +55,24 @@ A dedicated Python microservice that solves the **Multi-Depot Capacitated Vehicl
 3.  **Solve:** Python Service (`/solve-vrp`) runs OR-Tools algorithms to minimize total distance.
 4.  **Response:** Optimized stop sequences returned to Frontend.
 5.  **Render:** Frontend fetches road segments from OSRM and draws the fleet plan.
+
+### Machine Learning & Analytics
+
+- **Model:** Random Forest Regressor (Scikit-Learn)
+- **Serialization:** Joblib (`.pkl`)
+- **Metrics:** MSE, MAE
+
+#### Features
+- `location_encoded` — Encoded location ID  
+- `prev_day_l` — Previous-day consumption (liters)  
+- `pressure_pa` — Daily avg pressure (Pa)  
+- `device_id` — Meter identifier  
+- `day_of_week` — Extracted from timestamp  
+
+#### ML Logic Flow
+1. **Feature Engineering:** Encode locations, extract day of week, generate `prev_day_l`, aggregate daily telemetry.
+2. **Training:** Train Random Forest on daily aggregates, optimizing MAE and tracking MSE.
+3. **Inference:** Generate 24h per-location demand forecasts from latest snapshots for routing.
 
 ---
 
@@ -121,4 +141,4 @@ Contributions are welcome! Please check the `docs/` folder for detailed implemen
 
 ---
 
-*Built with ❤️ for the future of humanitarian logistics.*
+*CBT Inc. — Builting the future of humanitarian logistics.*
