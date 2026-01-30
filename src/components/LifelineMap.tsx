@@ -486,6 +486,9 @@ export default function LifelineMap() {
           });
       });
 
+      // Track which original community IDs were visited
+      const visitedCommunityIds = new Set<string>();
+
       for (const vehicleRoute of solution.routes) {
         const routeLocs = vehicleRoute.locations;
         const vehicleColor = routeColors[vehicleRoute.vehicle_id % routeColors.length];
@@ -504,6 +507,8 @@ export default function LifelineMap() {
         
         routeLocs.forEach((loc, index) => {
            const baseId = loc.id.split('_part')[0];
+           visitedCommunityIds.add(baseId);
+
            let label = baseId;
            const fixed = FIXED_DEPOTS.find(d => d.id === baseId);
            const dbLoc = dbLocations.find(l => l.id === baseId);
@@ -527,6 +532,27 @@ export default function LifelineMap() {
            });
         });
       }
+
+      // Add Unserved Communities (the ones skipped by the solver)
+      allRawLocations.filter(l => l.label === 'community' && !visitedCommunityIds.has(l.id)).forEach(unserved => {
+          let label = unserved.id;
+          const dbLoc = dbLocations.find(l => l.id === unserved.id);
+          if (dbLoc) label = dbLoc.name;
+
+          allFeatures.push({ 
+              type: 'Feature', 
+              geometry: { type: 'Point', coordinates: [unserved.lon, unserved.lat] }, 
+              properties: { 
+                  vehicle_id: -1, 
+                  type: 'end', 
+                  id: unserved.id, 
+                  label: label, 
+                  demand: unserved.demand, 
+                  color: '#94a3b8', // Slate Gray
+                  isUnserved: true 
+              } 
+          });
+      });
       
       const fc = { type: 'FeatureCollection' as const, features: allFeatures };
       try { localStorage.setItem(ROUTE_CACHE_KEY, JSON.stringify(fc)); } catch (_e) {}
@@ -679,7 +705,11 @@ export default function LifelineMap() {
                 <h4 className="font-bold text-gray-900 dark:text-white mb-1">{hoverInfo.feature.label}</h4>
                 <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
                     <div className="flex justify-between"><span>Demand:</span><span className="font-mono font-bold text-blue-600">{hoverInfo.feature.demand} L</span></div>
-                    {hoverInfo.feature.vehicle_id !== -1 && <div className="flex justify-between border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1"><span>Vehicle:</span><span className="font-mono">#{hoverInfo.feature.vehicle_id}</span></div>}
+                    {hoverInfo.feature.vehicle_id !== -1 ? (
+                        <div className="flex justify-between border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1"><span>Vehicle:</span><span className="font-mono">#{hoverInfo.feature.vehicle_id}</span></div>
+                    ) : (
+                        <div className="flex justify-between border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1 text-red-500 font-bold uppercase tracking-tighter"><span>Status:</span><span>Unserved</span></div>
+                    )}
                 </div>
             </div>
           )}
