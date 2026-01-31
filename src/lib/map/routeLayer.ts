@@ -34,6 +34,15 @@ export function initRouteLayer(map: maplibregl.Map) {
     },
   });
 
+  // Source for "Ghost" routes (previous state)
+  map.addSource('route-ghost', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features: [],
+    },
+  });
+
   // Layer for the route lines
   map.addLayer({
     id: 'route-line',
@@ -50,6 +59,23 @@ export function initRouteLayer(map: maplibregl.Map) {
       'line-opacity': 0.8,
     },
   });
+
+  // Layer for ghost route lines (underneath active routes)
+  map.addLayer({
+    id: 'route-ghost-line',
+    type: 'line',
+    source: 'route-ghost',
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round',
+    },
+    paint: {
+      'line-color': '#9ca3af', // Gray
+      'line-width': 4, // Match width or slightly thinner
+      'line-opacity': 0.4,
+      'line-dasharray': [1, 1], // Dashed to indicate "past"
+    },
+  }, 'route-line'); // Place BEFORE 'route-line' (visually underneath)
 
   // Layer for start points (depot)
   map.addLayer({
@@ -138,6 +164,13 @@ export function updateRoute(map: maplibregl.Map, features: GeoJSON.FeatureCollec
       }
     }
   }
+}
+
+export function updateGhostRoute(map: maplibregl.Map, features: GeoJSON.FeatureCollection) {
+    const source = map.getSource('route-ghost') as maplibregl.GeoJSONSource;
+    if (source) {
+        source.setData(features);
+    }
 }
 
 /**

@@ -4,7 +4,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { supabase } from '@/lib/supabase/client';
 import { initMapLibre } from '@/lib/map/initMap';
-import { initRouteLayer, updateRoute } from '@/lib/map/routeLayer';
+import { initRouteLayer, updateRoute, updateGhostRoute } from '@/lib/map/routeLayer';
 import { fetchRoute } from '@/lib/routing/osrm';
 import CreateLocationModal from './CreateLocationModal';
 import CreateVehicleModal from './CreateVehicleModal';
@@ -117,6 +117,9 @@ export default function LifelineMap() {
     y: number;
     feature: HoverFeatureProperties;
   } | null>(null);
+  
+  // UI State
+  const [isStatsCollapsed, setIsStatsCollapsed] = useState(false);
 
   // Feature States
   const [isAddingLocation, setIsAddingLocation] = useState(false);
@@ -350,22 +353,31 @@ export default function LifelineMap() {
     updateRoute(mapInstance.current, featureCollection, fitToView);
 
     const vehicles = new Set<number>();
-    const communities: { label: string; demand: number }[] = [];
+    const demandMap: Record<string, number> = {};
     let totalDemand = 0;
 
     featureCollection.features.forEach(f => {
       const p = f.properties;
       if (p?.vehicle_id !== undefined && p.vehicle_id !== -1) vehicles.add(p.vehicle_id);
       if (p?.type === 'end') {
-        communities.push({ label: p.label, demand: p.demand });
+        const label = p.label || 'Unknown';
+        demandMap[label] = (demandMap[label] || 0) + (p.demand || 0);
         totalDemand += p.demand || 0;
       }
     });
 
+    const aggregatedDemands = Object.entries(demandMap).map(([label, demand]) => ({
+      label,
+      demand
+    }));
+
     const vehicleList = Array.from(vehicles).sort((a, b) => a - b);
     setAvailableVehicles(vehicleList);
     setVisibleVehicles(vehicleList);
-    setFleetStats({ totalDemand, topDemands: communities.sort((a, b) => b.demand - a.demand) });
+    setFleetStats({ 
+      totalDemand, 
+      topDemands: aggregatedDemands.sort((a, b) => b.demand - a.demand) 
+    });
     setRoutesLoaded(true);
   }, [mapLoaded]);
 
@@ -516,9 +528,28 @@ export default function LifelineMap() {
       if (!response.ok) throw new Error(`VRP Solver failed`);
       const solution: SolveResponse = await response.json();
       
+      // 4. Ghosting Step: Move current visible routes to ghost layer
+      if (mapInstance.current) {
+          // Get current data from the 'route' source
+          const source = mapInstance.current.getSource('route') as maplibregl.GeoJSONSource;
+          // @ts-expect-error - Accessing internal _data property if needed, or better: retrieve from cache/state
+          // Since we don't have easy access to source data directly, let's use the local cache we likely just read from or empty
+          const cached = localStorage.getItem(ROUTE_CACHE_KEY);
+          if (cached) {
+              updateGhostRoute(mapInstance.current, JSON.parse(cached));
+          }
+      }
+
       const allFeatures: GeoJSON.Feature[] = [];
       const routeColors = ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'];
       const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      // Helper for progressive rendering
+      const renderProgress = () => {
+          if (mapInstance.current && mapLoaded) {
+              updateRoute(mapInstance.current, { type: 'FeatureCollection', features: [...allFeatures] }, false);
+          }
+      };
 
       // Add Start Points (Depots) for visual context
       locations.filter(l => l.demand === 0).forEach(depot => {
@@ -534,9 +565,12 @@ export default function LifelineMap() {
               properties: { vehicle_id: -1, type: 'start', id: depot.id, label: label, demand: 0, color: '#16a34a' } 
           });
       });
+      // Don't render immediately. Wait for first route segment to be ready to avoid "empty map" flash.
+      // renderProgress(); 
 
       // Track which original community IDs were visited
       const visitedCommunityIds = new Set<string>();
+      let hasStartedRendering = false;
 
       for (const vehicleRoute of solution.routes) {
         const routeLocs = vehicleRoute.locations;
@@ -548,9 +582,19 @@ export default function LifelineMap() {
           try {
             const route = await fetchRoute({ lng: start.lon, lat: start.lat }, { lng: end.lon, lat: end.lat });
             allFeatures.push({ type: 'Feature', geometry: route.geometry, properties: { vehicle_id: vehicleRoute.vehicle_id, type: 'line', color: vehicleColor, distance: route.properties.distance, duration: route.properties.duration, total_route_distance: vehicleRoute.total_distance_meters } });
-            await sleep(250); 
+            
+            // Render immediately if this is the first segment, or progressively otherwise
+            if (!hasStartedRendering) {
+                renderProgress();
+                hasStartedRendering = true;
+            } else {
+                renderProgress();
+            }
+            await sleep(10); // Faster animation
           } catch (_e) {
             allFeatures.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[start.lon, start.lat], [end.lon, end.lat]] }, properties: { vehicle_id: vehicleRoute.vehicle_id, type: 'line', color: vehicleColor, is_fallback: true, total_route_distance: vehicleRoute.total_distance_meters } });
+            renderProgress();
+            hasStartedRendering = true;
           }
         }
         
@@ -580,6 +624,7 @@ export default function LifelineMap() {
                } 
            });
         });
+        renderProgress(); // Render points for this route
       }
 
       // Add Unserved Communities (the ones skipped by the solver)
@@ -606,6 +651,11 @@ export default function LifelineMap() {
       const fc = { type: 'FeatureCollection' as const, features: allFeatures };
       try { localStorage.setItem(ROUTE_CACHE_KEY, JSON.stringify(fc)); } catch (_e) {}
       processAndRenderRoutes(fc, false);
+      
+      // Clear ghost routes now that animation is done
+      if (mapInstance.current) {
+          updateGhostRoute(mapInstance.current, { type: 'FeatureCollection', features: [] });
+      }
     } catch (error: unknown) {
       setMapError((error as Error).message);
     } finally {
@@ -661,6 +711,10 @@ export default function LifelineMap() {
         
         map.on('mouseenter', 'route-line', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'route-line', () => { map.getCanvas().style.cursor = ''; });
+        
+        map.on('mouseenter', 'route-start', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'route-start', () => { map.getCanvas().style.cursor = ''; });
+
         map.on('mouseenter', 'route-end', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'route-end', () => { map.getCanvas().style.cursor = ''; if (mounted.current) setHoverInfo(null); }); // Check here too
 
@@ -703,17 +757,104 @@ export default function LifelineMap() {
             setNewLocationCoords({ lat: e.lngLat.lat, lng: e.lngLat.lng });
             setShowLocationModal(true);
         } else {
-            const features = map.queryRenderedFeatures(e.point, { layers: ['route-line'] });
-            if (features.length > 0) {
-                const props = features[0].properties;
-                new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>Vehicle ${props?.vehicle_id}</b><br/>Dist: ${(props?.total_route_distance/1000).toFixed(1)}km`).addTo(map);
+            // Check for route lines (existing logic)
+            const routeFeatures = map.queryRenderedFeatures(e.point, { layers: ['route-line'] });
+            if (routeFeatures.length > 0) {
+                const props = routeFeatures[0].properties;
+                const vehicleId = props?.vehicle_id;
+                const distance = (props?.total_route_distance/1000).toFixed(1);
+                
+                const routePopupHtml = `
+                    <div class="p-3 bg-white dark:bg-zinc-900 text-gray-900 dark:text-gray-100">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="w-3 h-3 rounded-full" style="background-color: ${['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'][vehicleId % 10]}"></span>
+                            <h3 class="font-bold text-sm uppercase tracking-wider">Vehicle #${vehicleId}</h3>
+                        </div>
+                        <div class="flex justify-between items-center text-xs bg-gray-50 dark:bg-zinc-800/50 p-2 rounded border border-gray-100 dark:border-zinc-800">
+                            <span class="text-gray-500 dark:text-zinc-400">Total Route:</span>
+                            <span class="font-mono font-bold text-blue-600 dark:text-blue-400">${distance} km</span>
+                        </div>
+                    </div>
+                `;
+
+                new maplibregl.Popup({ maxWidth: '200px' })
+                    .setLngLat(e.lngLat)
+                    .setHTML(routePopupHtml)
+                    .addTo(map);
+                return;
+            }
+
+            // Check for Depots (Start Points)
+            const depotFeatures = map.queryRenderedFeatures(e.point, { layers: ['route-start'] });
+            if (depotFeatures.length > 0) {
+                const props = depotFeatures[0].properties;
+                const depotId = props?.id;
+                const depotName = props?.label || 'Depot';
+                
+                // 1. Get Real Vehicles
+                const assignedRealVehicles = dbVehicles.filter(v => v.assigned_location_id === depotId);
+                
+                // 2. Calculate Mock Vehicles (matching the logic in handleGenerateRoutes)
+                // We need to know the index of this depot in the consolidated list to match the "i % num_depots" logic
+                const allDepots = [
+                    ...FIXED_DEPOTS,
+                    ...dbLocations.filter(l => l.label === 'depot')
+                ];
+                const depotIndex = allDepots.findIndex(d => d.id === depotId);
+                
+                const mockVehicles: { name: string, capacity: number }[] = [];
+                if (depotIndex !== -1) {
+                    const num_mock_vehicles = 20;
+                    const num_available_depots = allDepots.length;
+                    for (let i = 0; i < num_mock_vehicles; i++) {
+                        if (i % num_available_depots === depotIndex) {
+                            mockVehicles.push({
+                                name: `Truck #${i}`,
+                                capacity: [5000, 3000, 1000][i % 3]
+                            });
+                        }
+                    }
+                }
+
+                let htmlContent = `<div class="p-4 min-w-[240px] bg-white dark:bg-zinc-900 text-gray-900 dark:text-gray-100">
+                    <h3 class="font-bold text-lg mb-1 border-b border-gray-100 dark:border-zinc-800 pb-2">${depotName}</h3>
+                    <div class="text-[10px] text-gray-400 dark:text-zinc-500 mb-4 font-mono uppercase tracking-tighter">Station ID: ${depotId.substring(0,12)}</div>`;
+                
+                const totalFleet = [...assignedRealVehicles.map(v => ({ ...v, source: 'User' })), ...mockVehicles.map(v => ({ ...v, source: 'System' }))];
+
+                if (totalFleet.length > 0) {
+                    htmlContent += `<h4 class="font-semibold text-xs mb-3 text-gray-500 dark:text-zinc-400 flex justify-between uppercase tracking-wider"><span>🚛 Stationed Fleet</span> <span>${totalFleet.length}</span></h4>
+                    <div class="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">`;
+                    
+                    totalFleet.forEach(v => {
+                        const isMock = v.source === 'System';
+                        htmlContent += `<div class="flex justify-between items-center text-xs ${isMock ? 'bg-gray-50 dark:bg-zinc-800/50' : 'bg-blue-50 dark:bg-blue-900/20'} p-2.5 rounded-lg border ${isMock ? 'border-gray-100 dark:border-zinc-800' : 'border-blue-100 dark:border-blue-800/50'}">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-gray-800 dark:text-gray-200">${v.name}</span>
+                                <span class="text-[9px] ${isMock ? 'text-gray-400 dark:text-zinc-500' : 'text-blue-500 dark:text-blue-400 font-bold'} uppercase">${v.source}</span>
+                            </div>
+                            <span class="font-mono font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-zinc-900 px-2 py-1 rounded-md shadow-sm border border-gray-100 dark:border-zinc-800">${v.capacity}L</span>
+                        </div>`;
+                    });
+                    
+                    htmlContent += `</div>`;
+                } else {
+                    htmlContent += `<p class="text-sm text-gray-400 dark:text-zinc-600 italic py-6 text-center">No vehicles stationed here.</p>`;
+                }
+                
+                htmlContent += `</div>`;
+
+                new maplibregl.Popup({ maxWidth: '300px', className: 'rounded-xl overflow-hidden' })
+                    .setLngLat(e.lngLat)
+                    .setHTML(htmlContent)
+                    .addTo(map);
             }
         }
     };
     map.on('click', clickHandler);
     map.getCanvas().style.cursor = isAddingLocation ? 'crosshair' : '';
     return () => { map.off('click', clickHandler); };
-  }, [isAddingLocation, mapLoaded]);
+  }, [isAddingLocation, mapLoaded, dbVehicles]);
 
   if (mapError) return <div className="p-4 bg-red-50 text-red-500">Map Error: {mapError}</div>;
 
@@ -725,7 +866,7 @@ export default function LifelineMap() {
       <CreateDeviceModal isOpen={showDeviceModal} onClose={() => setShowDeviceModal(false)} onSave={handleCreateDevice} vehicles={dbVehicles} />
 
       {/* Top Bar */}
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-zinc-900 p-4 rounded-lg border border-gray-200 dark:border-zinc-800 shadow-sm gap-4 z-10">
+      <div className="relative z-30 flex flex-col md:flex-row justify-between items-center bg-white dark:bg-zinc-900 p-4 rounded-lg border border-gray-200 dark:border-zinc-800 shadow-sm gap-4">
           <div className="relative w-full md:w-1/3">
               <input type="text" placeholder="🔍 Search communities..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-4 pr-10 py-2 rounded-full border border-gray-300 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               {searchResults.length > 0 && (
@@ -741,9 +882,6 @@ export default function LifelineMap() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-center">
-              <button onClick={() => { console.log('[LifelineMap] Manually dispatching test event'); window.dispatchEvent(new CustomEvent('water-mapper:data-updated')); }} className="px-3 py-1.5 rounded-lg font-medium text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 flex items-center gap-1.5 transition-all">
-                  ⚡ Test Update
-              </button>
               <button onClick={() => setIsAddingLocation(!isAddingLocation)} className={`px-3 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 transition-all ${isAddingLocation ? 'bg-amber-500 text-white shadow-inner' : 'bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700'}`}>
                   {isAddingLocation ? '📍 Pick on Map' : '➕ Location'}
               </button>
@@ -788,42 +926,80 @@ export default function LifelineMap() {
 
         {/* Stats Overlay */}
         {(routesLoaded || fleetStats) && (
-          <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-zinc-900/95 p-4 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 min-w-[200px] max-h-[80vh] overflow-y-auto">
-            {fleetStats && (
-              <div className="mb-4 pb-4 border-b border-gray-100 dark:border-zinc-800">
-                <h3 className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1"><span>🚨</span> Demand Scoreboard</h3>
-                <div className="space-y-1 mb-3 max-h-[200px] overflow-y-auto pr-1">
-                   {fleetStats.topDemands.map((comm, idx) => (
-                      <div key={comm.label} className="flex justify-between items-center text-xs p-1.5 rounded hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors">
-                          <div className="flex items-center gap-2">
-                              <span className={`font-bold w-4 text-center ${idx < 3 ? 'text-red-500' : 'text-gray-400'}`}>#{idx + 1}</span>
-                              <span className="text-gray-700 dark:text-gray-200 truncate max-w-[100px]">{comm.label}</span>
-                          </div>
-                          <span className="font-bold text-gray-900 dark:text-white tabular-nums">{comm.demand.toLocaleString()} L</span>
-                      </div>
-                   ))}
-                </div>
-                <div className="mt-2 bg-gray-50 dark:bg-zinc-800/50 p-2 rounded text-center">
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-medium">Total Fleet Load</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">{fleetStats.totalDemand.toLocaleString()} L</p>
-                </div>
-              </div>
-            )}
+          <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-zinc-900/95 rounded-lg shadow-xl border border-gray-200 dark:border-zinc-800 w-[240px] transition-all duration-300 overflow-hidden">
+            <button 
+                onClick={() => setIsStatsCollapsed(!isStatsCollapsed)}
+                className="w-full flex items-center justify-between p-3 bg-gray-50/50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors border-b border-gray-100 dark:border-zinc-800"
+            >
+                <span className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wider flex items-center gap-2">
+                    <span>📊</span> Mission Control
+                </span>
+                <span className="text-gray-400 dark:text-gray-500 transform transition-transform duration-200" style={{ transform: isStatsCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                    ▼
+                </span>
+            </button>
 
-            <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-white flex items-center gap-2"><span>🚛</span> Fleet Status</h3>
-            <div className="space-y-2.5">
-              {availableVehicles.map(id => (
-                <label key={id} className="flex items-center space-x-2.5 cursor-pointer group hover:bg-gray-50 dark:hover:bg-zinc-800 p-1 rounded transition-colors">
-                  <input type="checkbox" checked={visibleVehicles.includes(id)} onChange={(e) => { if (e.target.checked) setVisibleVehicles(prev => [...prev, id]); else setVisibleVehicles(prev => prev.filter(v => v !== id)); }} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
-                  <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'][id % 10] }} />
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">Vehicle {id}</span>
-                </label>
-              ))}
-            </div>
-            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800 flex justify-between text-xs text-gray-500">
-               <button onClick={() => setVisibleVehicles(availableVehicles)} className="hover:text-blue-600 font-medium transition-colors">Select All</button>
-               <button onClick={() => setVisibleVehicles([])} className="hover:text-blue-600 font-medium transition-colors">Clear</button>
-            </div>
+            {!isStatsCollapsed && (
+                <div className="p-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    {fleetStats && (
+                    <div className="mb-4 pb-4 border-b border-gray-100 dark:border-zinc-800">
+                        <h3 className="text-[10px] font-bold text-red-500 dark:text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                            Critical Demand
+                        </h3>
+                        <div className="space-y-1 mb-3 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
+                        {fleetStats.topDemands.map((comm, idx) => (
+                            <div key={comm.label} className="flex justify-between items-center text-xs p-1.5 rounded hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                    <span className={`font-mono font-bold w-4 text-center ${idx < 3 ? 'text-red-500' : 'text-gray-400'}`}>{idx + 1}</span>
+                                    <span className="text-gray-700 dark:text-gray-300 truncate">{comm.label}</span>
+                                </div>
+                                <span className="font-mono font-bold text-gray-900 dark:text-white tabular-nums ml-2">{comm.demand.toLocaleString()}</span>
+                            </div>
+                        ))}
+                        </div>
+                        <div className="mt-2 bg-blue-50 dark:bg-blue-900/20 p-2 rounded-lg text-center border border-blue-100 dark:border-blue-800/30">
+                            <p className="text-[9px] text-blue-500 dark:text-blue-400 uppercase font-bold tracking-wide mb-0.5">Total Load</p>
+                            <p className="text-lg font-mono font-bold text-blue-700 dark:text-blue-300">{fleetStats.totalDemand.toLocaleString()} L</p>
+                        </div>
+                    </div>
+                    )}
+
+                    <div className="mb-1">
+                        <h3 className="text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                            <span>System Health</span>
+                        </h3>
+                        <div className="space-y-2 mb-4 bg-gray-50 dark:bg-zinc-800/50 p-2.5 rounded-lg border border-gray-100 dark:border-zinc-800">
+                            <div className="flex justify-between items-center text-[10px]">
+                                
+                            </div>
+                            <div className="flex justify-between items-center text-[10px]">
+                                <span className="text-gray-500 dark:text-zinc-400">Last Sync</span>
+                                <span className={`font-mono font-bold ${isUpdating ? 'text-green-500' : 'text-gray-900 dark:text-white'}`}>
+                                    {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Waiting...'}
+                                </span>
+                            </div>
+                        </div>
+
+                        <h3 className="text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                            <span>Active Fleet</span>
+                            <span className="bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded text-[9px]">{visibleVehicles.length}/{availableVehicles.length}</span>
+                        </h3>
+                        <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
+                        {availableVehicles.map(id => (
+                            <label key={id} className="flex items-center space-x-2.5 cursor-pointer group hover:bg-gray-50 dark:hover:bg-zinc-800 p-1.5 rounded-md transition-colors select-none">
+                            <input type="checkbox" checked={visibleVehicles.includes(id)} onChange={(e) => { if (e.target.checked) setVisibleVehicles(prev => [...prev, id]); else setVisibleVehicles(prev => prev.filter(v => v !== id)); }} className="rounded border-gray-300 dark:border-zinc-600 text-blue-600 focus:ring-blue-500 dark:focus:ring-offset-zinc-900 cursor-pointer w-3.5 h-3.5" />
+                            <span className="w-2.5 h-2.5 rounded-full shadow-sm ring-1 ring-white/20" style={{ backgroundColor: ['#3b82f6', '#16a34a', '#f97316', '#9333ea', '#e11d48', '#0891b2', '#db2777', '#7c3aed', '#ea580c', '#2563eb'][id % 10] }} />
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">Vehicle #{id}</span>
+                            </label>
+                        ))}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800 flex justify-between text-[10px] font-medium">
+                            <button onClick={() => setVisibleVehicles(availableVehicles)} className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors px-2 py-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded">All On</button>
+                            <button onClick={() => setVisibleVehicles([])} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors px-2 py-1 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded">All Off</button>
+                        </div>
+                    </div>
+                </div>
+            )}
           </div>
         )}
         <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />

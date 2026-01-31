@@ -1,0 +1,15 @@
+INFO:     Started server process [29172]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+ML Model loaded successfully from water_demand_model.pkl
+DEBUG: Received request: location_name='loc_001' prev_day_l=3000.0 pressure_pa=3000.0 device_id_count=10 day_of_week=2
+DEBUG: Encoded 'loc_001' to 0
+DEBUG: Initial Input DataFrame:
+   location_encoded  prev_day_l  pressure_pa  device_id  day_of_week
+0                 0      3000.0       3000.0         10            2
+DEBUG: Reordered Input DataFrame (features=['location_encoded', 'prev_day_l', 'pressure_pa', 'device_id', 'day_of_week']):
+   location_encoded  prev_day_l  pressure_pa  device_id  day_of_week
+0                 0      3000.0       3000.0         10            2
+DEBUG: Raw prediction: 3104.09341488277
+INFO:     127.0.0.1:34512 - "POST /predict-demand HTTP/1.1" 200 OK
