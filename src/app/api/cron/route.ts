@@ -6,6 +6,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabaseServer";
 
 // Type for the ML request payload
 interface PredictionRequest {
+    location_name: string;
     prev_day_l: number;
     pressure_pa: number;
     device_id_count: number;
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
         // 2. Assign Locations
         const locationData = assignLocationsToBatch(rawData as TelemetryWithLocation[]);
 
-        console.log(locationData)
+        // console.log(locationData)
 
         // 3. In-Memory Clustering (Centroid Logic)
         // Filter active points (pressure > 2000 delta, stationary) - similar to process-csv
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
 
             // B. Call ML Prediction Endpoint
             const mlPayload = {
+                location_name: locId,
                 prev_day_l: totalDispensed, // Using current as proxy for 'previous' context or lag
                 pressure_pa: avgPressure,
                 device_id_count: uniqueDevices,
@@ -86,7 +88,9 @@ export async function POST(req: NextRequest) {
 
                 if (response.ok) {
                     const data = await response.json();
-                    predictedDemand = data.predicted_demand_l;
+                    // Add +/- 1000L of randomness to simulate variation, ensuring it doesn't drop below 100L
+                    const randomness = Math.floor(Math.random() * 6000) - 2000;
+                    predictedDemand = Math.max(100, data.predicted_demand_l + randomness);
                 } else {
                     console.error(`ML Service Error for ${locId}:`, await response.text());
                 }

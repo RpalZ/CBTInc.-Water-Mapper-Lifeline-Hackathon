@@ -45,6 +45,7 @@ class SolveResponse(BaseModel):
 
 class PredictionRequest(BaseModel):
     """Request body for water demand prediction."""
+    location_name: str
     prev_day_l: float
     pressure_pa: float
     device_id_count: int
@@ -66,18 +67,22 @@ app = FastAPI(
 # Load ML Model
 MODEL_PATH = "water_demand_model.pkl"
 FEATURES_PATH = "model_features.pkl"
+ENCODER_PATH = "location_encoder.pkl"
+
 model = None
 model_features = None
+location_encoder = None
 
-if os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH):
+if os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH) and os.path.exists(ENCODER_PATH):
     try:
         model = joblib.load(MODEL_PATH)
         model_features = joblib.load(FEATURES_PATH)
+        location_encoder = joblib.load(ENCODER_PATH)
         print(f"ML Model loaded successfully from {MODEL_PATH}")
     except Exception as e:
         print(f"Error loading ML model: {e}")
 else:
-    print(f"Warning: ML model files not found at {MODEL_PATH} or {FEATURES_PATH}")
+    print(f"Warning: ML model files not found at {MODEL_PATH} or {FEATURES_PATH} or {ENCODER_PATH}")
 
 # -----------------
 # 3. Core Logic & Helpers
@@ -111,7 +116,17 @@ def predict_demand(request: PredictionRequest):
         raise HTTPException(status_code=503, detail="ML Model not available")
 
     try:
+        # Encode location
+        loc_numeric = 0
+        if location_encoder:
+            try:
+                loc_numeric = location_encoder.transform([request.location_name])[0]
+            except ValueError:
+                print(f"Warning: {request.location_name} is a new location. Using default encoding.")
+                loc_numeric = 0
+
         input_data = {
+            'location_encoded': [loc_numeric],
             'prev_day_l': [request.prev_day_l],
             'pressure_pa': [request.pressure_pa],
             'device_id': [request.device_id_count],

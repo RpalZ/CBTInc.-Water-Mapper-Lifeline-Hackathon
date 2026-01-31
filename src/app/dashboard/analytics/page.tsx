@@ -2,38 +2,8 @@
 
 import { useLanguage } from '@/contexts/LanguageContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-
-// Demand chart data
-const DEMAND_CHART_DATA = [
-  { community: 'Khartoum North', demand: 7500 },
-  { community: 'Port Sudan East', demand: 9200 },
-  { community: 'El Obeid Central', demand: 4800 },
-  { community: 'Nyala West', demand: 6100 },
-  { community: 'Kassala South', demand: 8300 },
-  { community: 'Dongola Village', demand: 2900 },
-  { community: 'Wad Madani Hub', demand: 5400 },
-  { community: 'Al Fashir Outskirts', demand: 9700 },
-  { community: 'Sennar District', demand: 1200 },
-  { community: 'Atbara Riverside', demand: 6800 },
-  { community: 'Damazin Plains', demand: 4100 },
-  { community: 'Kosti Lakeside', demand: 8500 },
-  { community: 'Gedaref Farms', demand: 3300 },
-  { community: 'Kadugli Hills', demand: 7600 },
-  { community: 'Geneina Oasis', demand: 1900 },
-  { community: 'Khartoum South', demand: 5700 },
-  { community: 'Port Sudan West', demand: 8800 },
-  { community: 'El Obeid Suburbs', demand: 2500 },
-  { community: 'Nyala Central', demand: 7200 },
-  { community: 'Kassala Markets', demand: 4600 },
-  { community: 'Dongola Desert', demand: 9300 },
-  { community: 'Wad Madani Fields', demand: 1400 },
-  { community: 'Al Fashir Nomads', demand: 6500 },
-  { community: 'Sennar Rivers', demand: 3800 },
-  { community: 'Atbara Mines', demand: 7900 },
-  { community: 'Damazin Forests', demand: 2100 },
-  { community: 'Kosti Docks', demand: 5600 },
-  { community: 'Gedaref Borders', demand: 8400 },
-];
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase/client';
 
 // Helper function for color coding
 const getDemandColor = (demand: number) => {
@@ -44,12 +14,54 @@ const getDemandColor = (demand: number) => {
 
 export default function AnalyticsPage() {
   const { t } = useLanguage();
+  const [data, setData] = useState<{ community: string; demand: number }[]>([]);
+  const [stats, setStats] = useState({
+    totalCommunities: 0,
+    totalDemand: 0,
+    avgDemand: 0,
+    highRiskCount: 0
+  });
+
+  useEffect(() => {
+    const fetchData = async () => {
+        const { data: locations, error } = await supabase
+            .from('location')
+            .select('name, label, water_demand_daily')
+            .eq('label', 'community')
+            .order('water_demand_daily', { ascending: false }); // Show highest demand first
+
+        if (locations && !error) {
+            const chartData = locations.map(l => ({
+                community: l.name || 'Unknown',
+                demand: Math.round(l.water_demand_daily || 0)
+            })).filter(d => d.demand > 0);
+
+            setData(chartData);
+
+            // Calculate aggregate stats
+            setStats({
+                totalCommunities: locations.length,
+                totalDemand: chartData.reduce((acc, curr) => acc + curr.demand, 0),
+                avgDemand: Math.round(chartData.reduce((acc, curr) => acc + curr.demand, 0) / (chartData.length || 1)),
+                highRiskCount: chartData.filter(d => d.demand > 5000).length
+            });
+        }
+    };
+
+    fetchData();
+    // Subscribe to realtime updates for live analytics
+    const channel = supabase.channel('analytics-updates')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'location' }, fetchData)
+        .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const statCards = [
-    { label: 'Number of Communities', value: '39' },
-    { label: 'Online Modules', value: '12' },
-    { label: 'Working Trucks', value: '8' },
-    { label: 'Last Updated', value: '3 hours' },
+    { label: 'Monitored Communities', value: stats.totalCommunities.toLocaleString() },
+    { label: 'Total Daily Demand (L)', value: stats.totalDemand.toLocaleString() },
+    { label: 'Avg. Community Demand', value: `${stats.avgDemand.toLocaleString()} L` },
+    { label: 'High Risk Areas (>5k L)', value: stats.highRiskCount.toString() },
   ];
 
   return (
@@ -69,13 +81,13 @@ export default function AnalyticsPage() {
           📊 Community Demand Analysis
         </h2>
         <p className="text-secondary mb-6">
-          Bar chart showing daily water demand per community, color-coded by urgency: 
-          <span className="text-red-500 font-semibold">Red (High &gt;5000L)</span>, 
-          <span className="text-orange-500 font-semibold">Orange (Medium 2000-5000L)</span>, 
-          <span className="text-green-500 font-semibold">Green (Low &lt;2000L)</span>.
+          Live data showing daily water demand per community, color-coded by urgency: 
+          <span className="text-red-500 font-semibold ml-1">Red (High &gt;5000L)</span>, 
+          <span className="text-orange-500 font-semibold ml-1">Orange (Medium 2000-5000L)</span>, 
+          <span className="text-green-500 font-semibold ml-1">Green (Low &lt;2000L)</span>.
         </p>
         <ResponsiveContainer width="100%" height={500}>
-          <BarChart data={DEMAND_CHART_DATA} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis 
               dataKey="community" 
@@ -96,7 +108,7 @@ export default function AnalyticsPage() {
               contentStyle={{ backgroundColor: '#f9fafb', border: '1px solid #d1d5db' }} 
             />
             <Bar dataKey="demand" radius={[4, 4, 0, 0]}>
-              {DEMAND_CHART_DATA.map((entry, index) => (
+              {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={getDemandColor(entry.demand)} />
               ))}
             </Bar>
@@ -104,17 +116,17 @@ export default function AnalyticsPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* Placeholder Stat Cards */}
+      {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
         {statCards.map((stat, index) => (
           <div
             key={index}
-            className="bg-primary border border-color rounded-lg p-6"
+            className="bg-primary border border-color rounded-lg p-6 hover:shadow-md transition-shadow"
           >
-            <h3 className="text-sm font-medium text-secondary mb-2">
+            <h3 className="text-sm font-medium text-secondary mb-2 uppercase tracking-wider">
               {stat.label}
             </h3>
-            <p className="text-2xl font-semibold text-primary">
+            <p className="text-2xl font-bold text-primary">
               {stat.value}
             </p>
           </div>
